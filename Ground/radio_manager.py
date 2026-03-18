@@ -17,7 +17,8 @@ class Parser():
     def __init__(self):
         self.match_function = {'bit':self.bit,
                                'payload':self.payload,
-                               'string':self.string}
+                               'string':self.string,
+                               'byte': self.byte}
         self.item_length = {'uint8':1,
                             'uint16':2,
                             'uint32':4,
@@ -27,6 +28,7 @@ class Parser():
                             'float':4,
                             'double':8,
                             'long':4,
+                            'byte':1,
                             'payload': 0}
         
         self.match_format = {'uint8':'B',
@@ -39,23 +41,28 @@ class Parser():
                             'double':'d',
                             'long':'l'}
         
+        self.packet_length = -1
+        
     def unpack(self, format, b:bytes, start:int):
         if format in self.match_format:
             return (struct.unpack_from(self.match_format[format], b, start)[0], self.item_length[format])
         elif format in self.match_function:
-            return self.match_function(b, start)
+            return self.match_function[format](b, start)
         
     def pack(self, format, item):
         if format in self.match_format:
             return (struct.pack(self.match_format[format], item), self.item_length[format])
         elif format == 'payload':
             return (item, len(item))
+        
+    def byte(self, b: bytes, start:int):
+        return (bytes(b[start:start+1]), 1)
                 
     def bit(self, b: bytes, start: int, bit: int):
         return((b[start]>>bit) & 1)
     
     def payload(self, b: bytes, start: int):
-        return (b[start:], len(b[start:]))
+        return (b[start:self.packet_length-start], len(b[start:self.packet_length-start]))
     
     def get_length(self, length_keys:tuple, key = lambda x: x):
         return sum(map(lambda x: self.item_length[key(x)], length_keys))
@@ -91,7 +98,7 @@ class radio_serial():
             "MAX_WINDOW": None
         }
         
-        self.serial_setup(name, baud, True)
+        self.serial_setup(name, baud)
         if set_parameters: self.config_radio()
 
         self.parser = Parser()
@@ -104,7 +111,7 @@ class radio_serial():
     
         
     # Establish serial communication with the radio
-    def serial_setup(self, name, baud, rtscts) -> Serial:
+    def serial_setup(self, name, baud) -> Serial:
         if not name:
             #Find available ports and promt user to choose
             ports = list_ports.comports()
@@ -113,8 +120,8 @@ class radio_serial():
                 if port.description!="n/a":
                     print(f"({port.description})")
                     print(f"[{i}] {port.name} {port.description}")
-
-            self.serial = Serial(f"/dev/{ports[int(input('\nENTER SELECTION:'))].name}", baud, rtscts=rtscts)
+            name = ports[int(input('\nENTER SELECTION:'))].name
+            self.serial = Serial(f"/dev/{name}", baud, rtscts=True)
         else:
             names = list(map(lambda x: x.name, list_ports.comports()))
             i = 1
@@ -225,13 +232,13 @@ class radio_serial():
         while time_window == None or time() < t1 + time_window:
             if self.serial.in_waiting:
                 byte = self.serial.read()[0]
-                
+                #logging.debug(f'readByte {hex(byte)}, this is the {bytes_read}')
                 # Search for the header id
                 if state == SYNC:
                     sync_buffer.append(byte)
                     #logging.debug(f'{bytes(list(sync_buffer))}, {self.header_id}, {self.parser.pack('uint8', sync_buffer[-1] )[0]}, {self.parser.pack('uint8', sync_buffer[-1])[0]  in self.packet_structures}')
-                    if bytes(list(sync_buffer)[:-1]) == self.header_id:
-                        #and self.parser.pack('uint8', sync_buffer[-1])[0] in self.packet_structures:
+                    if bytes(list(sync_buffer)[:-1]) == self.header_id\
+                        and self.parser.pack('uint8', sync_buffer[-1])[0] in self.packet_structures:
                         logging.debug('Started parsing packet')
                         bytes_read = len(sync_buffer)
                         
@@ -251,7 +258,9 @@ class radio_serial():
                         byte_i = 0
                         for key, parser_key in self.header_structure:
                             header[key], l = self.parser.unpack(parser_key, packetBuffer, byte_i)
+                            logging.debug(f'key:{header[key]}, key:{key}, parser:{parser_key}')
                             byte_i += l
+                        #logging.debug(f'packetBuffer:{packetBuffer}')
                         state = PAYLOAD
                 
                 # Parse the payload 
@@ -259,9 +268,12 @@ class radio_serial():
                     # Read the payload
                     packetBuffer[bytes_read] = byte
                     bytes_read += 1
-                    logging.debug(f'{bytes_read}, {header}')
+                    
                     
                     if bytes_read == header['length']:
+                        self.parser.packet_length = header['length']
+                        #logging.debug(f'packet_structures: {self.packet_structures}')
+                        #logging.debug(f'packet id:{header["id"]}')
                         payload_structure = self.packet_structures[header['id']]
                         byte_i = self.header_length
 
@@ -272,7 +284,7 @@ class radio_serial():
 
                             # Parse the data and store in temp container
                             for dim_i in range(dimentions):  
-                                temp_container[dim_i], l = self.parser.unpack(parser_key, packetBuffer, byte_i)
+                                temp_container[dim_i], l = self.parser.unpack(parser, packetBuffer, byte_i)
 
                                 temp_container[dim_i]*=transform
                                 byte_i += l
@@ -281,20 +293,21 @@ class radio_serial():
                             if dimentions == 1: payload[key] = temp_container[0]
                             else: payload[key] = temp_container
 
-                            packets_received += 1
+                        packets_received += 1
                             
-                            if packet_function:
-                                packet_function({'header': header, 'payload': payload})
-
-                            if time_window or (count and packets_received >= count):
-                                return {'header': header, 'payload': payload}
-                            else:
-                                payload = {}
-                                header = {}
-                                state = SYNC
-                                bytes_read = 0
+                        if packet_function:
+                            packet_function({'header': header, 'payload': payload})
+                            
+                        if time_window or (count and packets_received >= count):
+                            return {'header': header, 'payload': payload}
+                        else:
+                            payload = {}
+                            header = {}
+                            state = SYNC
+                            bytes_read = 0
 
     def transmit_packet(self, packet):
+        #while self.serial.in_waiting: sleep(0.005)
         self.serial.write(packet)
     
 
@@ -302,5 +315,14 @@ if __name__ == "__main__":
     NET_ID = int(input("Enter NetID:"))
     logging.getLogger().setLevel(logging.DEBUG)
     main = radio_serial(NET_ID)
+    a = b'\xff'*64
+    i = 1
+    deltaT = 0
+    while True:
+        t1 = time()
+        main.transmit_packet(a)
+        deltaT = (time()-t1)
+        print(deltaT)
+        i+=1
     main.config_radio()
     

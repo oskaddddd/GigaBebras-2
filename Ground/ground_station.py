@@ -22,7 +22,7 @@ debug_packet_structure = (('angVelocity', 'int16', 3, 1/100),
 radio_name = None
 
 HEADER_STRUCTURE = (("header_id", 'uint16'),
-                    ("id", 'uint8'),
+                    ("id", 'byte'),
                     ('length', 'uint8'))
 
         
@@ -39,9 +39,9 @@ class receiver():
         self.radio.header_structure_config(structure= HEADER_STRUCTURE,
                                                       header_id=HEADER_ID)
         self.payload_structure =\
-               (('packet_count', 'uint8'),
-                ('packet_i', 'uint8'),
-                ('payload', 'payload'))
+               (('packet_count', 'uint8', 1, 1),
+                ('packet_i', 'uint8', 1, 1),
+                ('payload', 'payload', 1, 1))
         
         self.CTS_structure = (("CTS", 'uint8'))
         self.radio.payload_structure_config({'id': b'\x01', 'structure':debug_packet_structure},\
@@ -60,7 +60,7 @@ class receiver():
 
 
 class transmitter():
-    def __init__(self, data):
+    def __init__(self, data_dir):
         
         #Setup radio
         self.radio = radio_serial(NET_ID)  
@@ -105,10 +105,10 @@ class transmitter():
                 'length': 0}
         
         
-        self.data = data
+        self.dir = data_dir
         
         self.queue = []
-        self.build_queue('./test.tar.gz')
+        self.build_queue()
         self.transmit_data()
         
         transmission_thread = threading.Thread(target=self.transmit_data)
@@ -121,16 +121,18 @@ class transmitter():
         
         # Loop throught the structure, and unpack the values stored into one bytearray
         for key, format in structure:
-            logging.debug(f'unpacking item {values[key]} into format {format}')
+            #logging.debug(f'unpacking item {values[key]} into format {format}')
             
             #Ignore if items is already in byte form
             if type(values[key]) == bytes and format != 'payload': 
-                logging.debug(f'item already in byte form')
-                return values[key], self.unpack.item_length[format]
+                logging.debug(f'item already in byte form: {values[key]}')
+                out += bytearray(values[key])
+                snipet_length += self.unpack.item_length[format]
+                continue
             
             
             b, l = self.unpack.pack(format, values[key])
-            logging.debug(f'Unpacked item {values[key]} into {b}')
+            #logging.debug(f'Unpacked item {values[key]} into {b}')
             out += bytearray(b)
             snipet_length += l
         return (out, snipet_length)
@@ -147,10 +149,10 @@ class transmitter():
             self.payload['packet_i'] += 1
             self.payload['payload'] = self.queue[0]
             
-            logging.debug(self.payload)
+            #logging.debug(self.payload)
         
             packed_payload, l = self.pack_sturct(self.payload, self.payload_structure)
-            
+            logging.debug('Packed payload')
             self.header['length'] = l + self.header_length
             print(self.header)
             
@@ -162,10 +164,13 @@ class transmitter():
             
 
             packed_header, _ = self.pack_sturct(self.header, HEADER_STRUCTURE)
+            logging.debug("Packed header")
             packet = packed_header + packed_payload
+            
+            print([hex(b) for b in packed_payload])          
             self.radio.transmit_packet(packet)
             self.queue.pop(0)
-            sleep(0.5)
+            #sleep(0.1)
             if wait_for_debug:
                 wait_for_debug = False
                 self.header['id'] = self.packet_ids['NON_CTS']
@@ -173,9 +178,9 @@ class transmitter():
             
     
     # Add the bytes to queue 
-    def build_queue(self, directory:str):
+    def build_queue(self):
         
-        with open(directory,'rb') as f:
+        with open(self.dir,'rb') as f:
             raw = f.read()
             
             file_length = len(raw)
@@ -198,6 +203,6 @@ class transmitter():
         return 1
         
 if __name__ == '__main__':
-    body = transmitter(b'\x69')
+    body = transmitter('./test.tar.gz')
     
     
