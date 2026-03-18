@@ -2,93 +2,86 @@ from radio_manager import radio_serial
 import logging
 import threading
 from time import time, sleep
+from Constants import Constants as C
 
 
 
-NET_ID = 15
-HEADER_ID =  b'\xf2\x4f' #65536 max
 logging.getLogger().setLevel(logging.DEBUG)
 
-debug_packet_structure = (('angVelocity', 'int16', 3, 1/100),
-                          ('acceleration', 'int16', 3, 1/100),
-                          ('magneticField', 'int16', 3, 1/100),
-                          ('temprature', 'int16', 1, 1/100),
-                          ('humidity', 'uint8', 1, 1),
-                          ('preasure', 'uint32', 1, 1/1000),
-                          ('baterryVoltage', 'uint16', 1, 1/100),
-                          ('photoresistor', 'uint32', 1, 1)
-                          )
 
-radio_name = None
-
-HEADER_STRUCTURE = (("header_id", 'uint16'),
-                    ("id", 'byte'),
-                    ('length', 'uint8'))
 
         
 
 class receiver():
     def __init__(self):
-        self.radio = radio_serial(NET_ID, set_parameters=False)  
+        self.radio = radio_serial(C.NET_ID, set_parameters=False)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
                 
         self.debug_time_window = 0.1
         
         
-        self.radio.header_structure_config(structure= HEADER_STRUCTURE,
-                                                      header_id=HEADER_ID)
-        self.payload_structure =\
-               (('packet_count', 'uint8', 1, 1),
-                ('packet_i', 'uint8', 1, 1),
-                ('payload', 'payload', 1, 1))
+        self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
+                                                      header_id=C.HEADER_ID)
+
         
         self.CTS_structure = (("CTS", 'uint8'))
-        self.radio.payload_structure_config({'id': b'\x01', 'structure':debug_packet_structure},\
-                                            {'id': b'\x12', 'structure': self.CTS_structure},
-                                            {'id': b'\x24', 'structure': self.payload_structure})
+        self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure':C.DEBUG_PACKET_STRUCTURE},\
+                                            {'id': C.DATA_PACKET_ID, 'structure': C.DATA_PACKET_STRUCTURE})
         
-        self.radio.read_packets(packet_function=print)
+        self.out = b''
+        self.radio.read_packets(packet_function=self.packet_handler)
         
         
         
-     
-    def send_ack():
-        pass             
-                
+        
+        
+    def packet_handler(self, packet:dict):
+        match packet['header']['id']:
+            case C.DATA_PACKET_ID:
+                self.out += packet['payload']['payload']
+                print(packet['payload'])
+                if packet['payload']['packet_i'] == packet['payload']['packet_count']:
+                    print(self.out)
+                    print(str(self.out))
+                    exit()
+            case C.DEBUG_PACKET_ID:
+                pass
+        
+    def parse_data():
+        
+        pass        
+    def parse_debug():    
+        pass
         
 
-
+ 
 class transmitter():
     def __init__(self, data_dir):
         
         #Setup radio
-        self.radio = radio_serial(NET_ID)  
+        self.radio = radio_serial(C.NET_ID)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
         
         # Transmission variables
-        self.data_rate = 64
+        self.data_rate = 64 #kb/s
         self.max_packet_length = 64
         self.debug_time_window = 0.1
         
         
         
         # Configure radio for receiving
-        self.radio.header_structure_config(structure= HEADER_STRUCTURE,
-                                                      header_id=HEADER_ID)
+        self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
+                                                      header_id=C.HEADER_ID)
         
         
         self.CTS_structure = (("CTS", 'uint8'))
-        self.radio.payload_structure_config({'id': b'\x01', 'structure':debug_packet_structure},\
-                                            {'id': b'\x12', 'structure': self.CTS_structure})
+        self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure':C.DEBUG_PACKET_STRUCTURE},\
+                                            {'id': C.CTS_PACKET_ID, 'structure': self.CTS_structure})
         
         
-        # Transmitting structures
-        self.payload_structure =\
-               (('packet_count', 'uint8'),
-                ('packet_i', 'uint8'),
-                ('payload', 'payload'))
+
         self.payload = \
                {'packet_count': 0,
                 'packet_i': 0,
@@ -96,12 +89,10 @@ class transmitter():
                
         
         
-        self.packet_ids =\
-               {'NON_CTS': b'\x24',
-                'CTS': b'\xf3'}
+
         self.header = \
-               {"header_id" : HEADER_ID,
-                'id': self.packet_ids['NON_CTS'], 
+               {"header_id" : C.HEADER_ID,
+                'id': C.DATA_PACKET_ID, 
                 'length': 0}
         
         
@@ -120,7 +111,7 @@ class transmitter():
         snipet_length = 0
         
         # Loop throught the structure, and unpack the values stored into one bytearray
-        for key, format in structure:
+        for key, format, *args in structure:
             #logging.debug(f'unpacking item {values[key]} into format {format}')
             
             #Ignore if items is already in byte form
@@ -151,7 +142,7 @@ class transmitter():
             
             #logging.debug(self.payload)
         
-            packed_payload, l = self.pack_sturct(self.payload, self.payload_structure)
+            packed_payload, l = self.pack_sturct(self.payload, C.DATA_PACKET_STRUCTURE)
             logging.debug('Packed payload')
             self.header['length'] = l + self.header_length
             print(self.header)
@@ -163,7 +154,7 @@ class transmitter():
             #    t2 = t1
             
 
-            packed_header, _ = self.pack_sturct(self.header, HEADER_STRUCTURE)
+            packed_header, _ = self.pack_sturct(self.header, C.HEADER_STRUCTURE)
             logging.debug("Packed header")
             packet = packed_header + packed_payload
             
@@ -173,8 +164,10 @@ class transmitter():
             #sleep(0.1)
             if wait_for_debug:
                 wait_for_debug = False
-                self.header['id'] = self.packet_ids['NON_CTS']
+                self.header['id'] = C.DATA_PACKET_ID
                 debug_packet = self.radio.read_packets(self.debug_time_window)
+                
+            sleep(0.01)
             
     
     # Add the bytes to queue 
@@ -182,11 +175,11 @@ class transmitter():
         
         with open(self.dir,'rb') as f:
             raw = f.read()
-            
+            print(raw)
             file_length = len(raw)
             
-            self.header_length = self.unpack.get_length(HEADER_STRUCTURE, key=lambda x: x[1])
-            non_data_payload_length = self.unpack.get_length(self.payload_structure, key=lambda x: x[1])
+            self.header_length = self.unpack.get_length(C.HEADER_STRUCTURE, key=lambda x: x[1])
+            non_data_payload_length = self.unpack.get_length(C.DATA_PACKET_STRUCTURE, key=lambda x: x[1])
             max_payload_length = self.max_packet_length - self.header_length - non_data_payload_length
             
             #Add the payload data to the queue
