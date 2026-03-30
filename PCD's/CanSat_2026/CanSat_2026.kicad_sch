@@ -3232,7 +3232,7 @@
 	)
 	(wire
 		(pts
-			(xy 172.72 123.19) (xy 172.72 106.68)
+			(xy 172.72 130.81) (xy 172.72 106.68)
 		)
 		(stroke
 			(width 0)
@@ -3242,7 +3242,7 @@
 	)
 	(wire
 		(pts
-			(xy 175.26 123.19) (xy 175.26 104.14)
+			(xy 175.26 130.81) (xy 175.26 104.14)
 		)
 		(stroke
 			(width 0)
@@ -3259,6 +3259,16 @@
 			(type default)
 		)
 		(uuid "71365a31-4e6b-4e30-b3e4-51ab9868a9f0")
+	)
+	(wire
+		(pts
+			(xy 170.18 130.81) (xy 170.18 123.19)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "79b759ef-c6ab-47c1-9240-d8960d1ea66c")
 	)
 	(wire
 		(pts
@@ -3289,6 +3299,16 @@
 			(type default)
 		)
 		(uuid "8add9f31-27aa-45c5-966a-1f0785aeb40a")
+	)
+	(wire
+		(pts
+			(xy 182.88 130.81) (xy 182.88 123.19)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8df02f28-1806-48c4-a2f2-4ab0f0fd1e5d")
 	)
 	(wire
 		(pts
@@ -3498,7 +3518,7 @@
 				)
 			)
 		)
-		(property "Value" "Conn_01x03_Pin"
+		(property "Value" "GPS"
 			(at 204.47 132.08 90)
 			(effects
 				(font
@@ -5105,7 +5125,7 @@
 				)
 			)
 		)
-		(property "Value" "Conn_01x06"
+		(property "Value" "BMP280"
 			(at 158.75 132.08 90)
 			(effects
 				(font
@@ -5837,7 +5857,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x06")
-		(at 177.8 128.27 270)
+		(at 177.8 135.89 270)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -5845,15 +5865,15 @@
 		(dnp no)
 		(uuid "f1d32736-e94d-4b08-8e91-2e0905497344")
 		(property "Reference" "J2"
-			(at 163.83 128.27 0)
+			(at 163.83 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Value" "Conn_01x06"
-			(at 166.37 128.27 0)
+		(property "Value" "RADIO"
+			(at 166.37 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5861,7 +5881,7 @@
 			)
 		)
 		(property "Footprint" "Connector_JST:JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal"
-			(at 177.8 128.27 0)
+			(at 177.8 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5870,7 +5890,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 177.8 128.27 0)
+			(at 177.8 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5879,7 +5899,7 @@
 			)
 		)
 		(property "Description" "Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)"
-			(at 177.8 128.27 0)
+			(at 177.8 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
