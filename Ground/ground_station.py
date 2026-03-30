@@ -37,6 +37,7 @@ class receiver():
         
         
     def packet_handler(self, packet:dict):
+        return
         match packet['header']['id']:
             case C.DATA_PACKET_ID:
                 self.out += packet['payload']['payload']
@@ -60,7 +61,7 @@ class transmitter():
     def __init__(self, data_dir):
         
         #Setup radio
-        self.radio = radio_serial(C.NET_ID)  
+        self.radio = radio_serial(C.NET_ID, set_parameters=False)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
         
@@ -196,6 +197,6 @@ class transmitter():
         return 1
         
 if __name__ == '__main__':
-    body = transmitter('./test.tar.gz')
+    body = transmitter('./test1')
     
     

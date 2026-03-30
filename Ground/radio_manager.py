@@ -76,7 +76,7 @@ class Parser():
 
 
 class radio_serial():
-    def __init__(self, NET_ID, name:str = None, baud = 57600, max_packet_size = 128, set_parameters = False):
+    def __init__(self, NET_ID, name:str = None, baud = 57600, max_packet_size = 70, set_parameters = False):
         '''This function is responsible for handling the serial communication with the radio, radio settings and eceiving the packets from the radio. It is not respnsible for sending packets.'''
         
         self.radio_config = {
@@ -94,7 +94,7 @@ class radio_serial():
             "DUTY_CYCLE": None,
             "LBT_RSSI": None,
             "MANCHESTER": None,
-            "RTSCTS": None,
+            "RTSCTS": 1,
             "MAX_WINDOW": None
         }
         
@@ -229,17 +229,23 @@ class radio_serial():
         
         packets_received = 0
         
+        debug_read_bytes = 0
+        
         while time_window == None or time() < t1 + time_window:
+            
             if self.serial.in_waiting:
-                byte = self.serial.read()[0]
+                #logging.debug(bytes_read, packetBuffer)
+                byte = self.serial.read(1)[0]
                 #logging.debug(f'readByte {hex(byte)}, this is the {bytes_read}')
                 # Search for the header id
+                debug_read_bytes +=1
                 if state == SYNC:
                     sync_buffer.append(byte)
                     #logging.debug(f'{bytes(list(sync_buffer))}, {self.header_id}, {self.parser.pack('uint8', sync_buffer[-1] )[0]}, {self.parser.pack('uint8', sync_buffer[-1])[0]  in self.packet_structures}')
                     if bytes(list(sync_buffer)[:-1]) == self.header_id\
                         and self.parser.pack('uint8', sync_buffer[-1])[0] in self.packet_structures:
-                        logging.debug('Started parsing packet')
+                        logging.debug(f'Started parsing packet, read {debug_read_bytes} until found valid packet')
+                        
                         bytes_read = len(sync_buffer)
                         
                         # Copy the sync buffer to the packet buffer
@@ -258,7 +264,7 @@ class radio_serial():
                         byte_i = 0
                         for key, parser_key in self.header_structure:
                             header[key], l = self.parser.unpack(parser_key, packetBuffer, byte_i)
-                            logging.debug(f'key:{header[key]}, key:{key}, parser:{parser_key}')
+                            #logging.debug(f'key:{header[key]}, key:{key}, parser:{parser_key}')
                             byte_i += l
                         #logging.debug(f'packetBuffer:{packetBuffer}')
                         state = PAYLOAD
