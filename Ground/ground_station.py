@@ -118,7 +118,7 @@ class transmitter():
             
             #Ignore if items is already in byte form
             if type(values[key]) == bytes and format != 'payload': 
-                logging.debug(f'item already in byte form: {values[key]}')
+                #logging.debug(f'item already in byte form: {values[key]}')
                 out += bytearray(values[key])
                 snipet_length += self.unpack.item_length[format]
                 continue
@@ -145,9 +145,8 @@ class transmitter():
             #logging.debug(self.payload)
         
             packed_payload, l = self.pack_sturct(self.payload, C.DATA_PACKET_STRUCTURE)
-            logging.debug('Packed payload')
+            #logging.debug('Packed payload')
             self.header['length'] = l + self.header_length
-            print(self.header)
             
             #t2 = time()
             #if t2 >= t1+self.debug_frequency:
@@ -157,16 +156,17 @@ class transmitter():
             
 
             packed_header, _ = self.pack_sturct(self.header, C.HEADER_STRUCTURE)
-            logging.debug("Packed header")
-            logging.debug(self.payload)
+            #logging.debug("Packed header")
+            #logging.debug(self.payload)
             packet = packed_header + packed_payload
             
                    
             self.radio.transmit_packet(packet)
-            logging.debug(packet[0:])
-            logging.debug(len(packet))
+            print(packet[0:])
+            #logging.debug(len(packet))
+            sleep(0.001)
             self.queue.pop(0)
-            sleep(0.08)
+            
             if wait_for_debug:
                 wait_for_debug = False
                 self.header['id'] = C.DATA_PACKET_ID

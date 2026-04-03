@@ -83,7 +83,7 @@ class radio_serial():
         self.radio_config = {
             "FORMAT": None,
             "SERIAL_SPEED": None,
-            "AIR_SPEED": 64,
+            "AIR_SPEED": 250,
             "NETID": NET_ID,
             "TXPOWER": None,
             "ECC": 1,
@@ -244,8 +244,9 @@ class radio_serial():
             while (time_window == None or time() < t1 + time_window) and (not self.stop_event.is_set()):
                 if serial_buffer.qsize() != 0:
                     rx_buffer.extend(serial_buffer.get())
+                    #logging.debug(rx_buffer)
 
-
+                
                 if state == SYNC:
                     if len(rx_buffer) < 3: 
                         sleep(0.005)
@@ -256,7 +257,7 @@ class radio_serial():
                         logging.debug(f'Started parsing packet')
                         state = HEADER
                     else: 
-                        logging.debug(f"Popping some data: {rx_buffer[0]}")
+                        logging.debug(f"Popping some data: {rx_buffer[:1]}")
                         rx_buffer.pop(0)
                         
                 # Parse the header
@@ -332,24 +333,13 @@ class radio_serial():
         reading_thread.join()
         parsing_thread.join()
         
-        return out
-
-        
-        
-        
-        
-        
-        
-
-        
-        packets_received = 0
-        
-        debug_read_bytes = 0
+        return
         
         
 
     def transmit_packet(self, packet):
         #while self.serial.in_waiting: sleep(0.005)
+        while self.serial.out_waiting: sleep(0.0001)
         self.serial.write(packet)
     
 
