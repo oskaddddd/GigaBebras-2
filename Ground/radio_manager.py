@@ -1,12 +1,13 @@
 #import dataAPI
 import struct
-from sortedcontainers import SortedList
+
 from serial import Serial
 from serial.tools import list_ports as list_ports
-import json
+
 from time import sleep, time
 
-from collections import deque
+import queue
+import threading
 
 import logging
 
@@ -62,7 +63,7 @@ class Parser():
         return((b[start]>>bit) & 1)
     
     def payload(self, b: bytes, start: int):
-        return (b[start:self.packet_length-start], len(b[start:self.packet_length-start]))
+        return (b[start:self.packet_length], self.packet_length-start) # Return the rest of the packet
     
     def get_length(self, length_keys:tuple, key = lambda x: x):
         return sum(map(lambda x: self.item_length[key(x)], length_keys))
@@ -76,7 +77,7 @@ class Parser():
 
 
 class radio_serial():
-    def __init__(self, NET_ID, name:str = None, baud = 57600, max_packet_size = 70, set_parameters = False):
+    def __init__(self, NET_ID, name:str = None, baud = 57600, set_parameters = False):
         '''This function is responsible for handling the serial communication with the radio, radio settings and eceiving the packets from the radio. It is not respnsible for sending packets.'''
         
         self.radio_config = {
@@ -102,12 +103,6 @@ class radio_serial():
         if set_parameters: self.config_radio()
 
         self.parser = Parser()
-        
-        self.packetCount = 0
-        self.max_packet_size = max_packet_size
-        self.packetBuffer = bytearray()
-  
-        self.last_transmit = 0
     
         
     # Establish serial communication with the radio
@@ -213,104 +208,145 @@ class radio_serial():
         
         for structure in structures:
             self.packet_structures[structure['id']] = structure['structure']
+    
+    #Triggers the signal to stop reading packets 
+    def stop_reading_packets(self):
+        self.stop_event.set()
             
-    def read_packets(self, time_window = None, count = None, packet_function = None):
-        packetBuffer = bytearray(self.max_packet_size)
+    def read_packets(self, packet_function, time_window = None, count = None):
+       
+        self.stop_event = threading.Event()
         
-        bytes_read = 0
-        t1 = time()
-        header = {}
-        payload = {}
+        self.serial.read_all() #Clear buffer
+        serial_buffer = queue.Queue()
         
-        SYNC, HEADER, PAYLOAD = range(3)
-        state = SYNC
+        # Threaded function to read serial stream and add it to a queue
+        def read_serial():
+            while not self.stop_event.is_set():
+                if self.serial.in_waiting:
+                    serial_buffer.put(self.serial.read_all())
+                        
+
+        def parse_buffer():
+            packets_received = 0
+            
+            header = {}
+            payload = {}
+            
+            rx_buffer = bytearray()
+            
+            SYNC, HEADER, PAYLOAD = range(3)
+            state = SYNC
+            
+
+            t1 = time()
+            
+            while (time_window == None or time() < t1 + time_window) and (not self.stop_event.is_set()):
+                if serial_buffer.qsize() != 0:
+                    rx_buffer.extend(serial_buffer.get())
+
+
+                if state == SYNC:
+                    if len(rx_buffer) < 3: 
+                        sleep(0.005)
+                        continue # Wait for more data to flow in 
+                    
+                    #Check if the header matches and if the id is valid
+                    if rx_buffer[:2] == self.header_id and bytes(rx_buffer[2:3]) in self.packet_structures:
+                        logging.debug(f'Started parsing packet')
+                        state = HEADER
+                    else: 
+                        logging.debug(f"Popping some data: {rx_buffer[0]}")
+                        rx_buffer.pop(0)
+                        
+                # Parse the header
+                elif state == HEADER:
+                    if len(rx_buffer) < self.header_length:
+                        sleep(0.005)
+                        continue # Wait for more data to flow in 
+                    
+
+                    byte_i = 0
+                    for key, parser_key in self.header_structure:
+                        header[key], l = self.parser.unpack(parser_key, rx_buffer, byte_i)
+                        #logging.debug(f'key:{header[key]}, key:{key}, parser:{parser_key}')
+                        byte_i += l
+
+                    state = PAYLOAD
+                    
+                # Parse the payload 
+                elif state == PAYLOAD:
+                    
+                    if len(rx_buffer) < header['length']: 
+                        sleep(0.005)
+                        continue # Wait for more data to flow in 
+
+                    self.parser.packet_length = header['length']
+
+                    payload_structure = self.packet_structures[header['id']]
+                    
+                    byte_i = self.header_length
+                    for key, parser, dimentions, transform in payload_structure:
+                    
+                        # Create a temporary buffer to store the data for a certain key
+                        temp_container = [0]*dimentions
+                        
+                        # Parse the data and store in temp container
+                        for dim_i in range(dimentions):  
+                            temp_container[dim_i], l = self.parser.unpack(parser, rx_buffer, byte_i)
+                            temp_container[dim_i]*=transform
+                            byte_i += l
+                            
+                        # Store the data in the payload
+                        if dimentions == 1: payload[key] = temp_container[0]
+                        else: payload[key] = temp_container
+                        
+                    packets_received += 1
+                    logging.debug({'header': header, 'payload': payload})
+                    packet_function({'header': header, 'payload': payload})
+                    if time_window or (count and packets_received >= count):
+                        self.stop_event.set()
+                        
+                    else:
+                        logging.debug(f'Finished parsing packet')
+                        del rx_buffer[:header['length']]
+                        payload = {}
+                        header = {}
+                        state = SYNC
+                        
+            
+            
+            
+            
+            
+            
         
-        sync_buffer = deque(maxlen=3)
+        reading_thread = threading.Thread(target=read_serial, daemon=True)
+        parsing_thread = threading.Thread(target=parse_buffer, daemon=True)
+        
+        reading_thread.start()
+        parsing_thread.start()
+
+            
+        self.stop_event.wait()
+        reading_thread.join()
+        parsing_thread.join()
+        
+        return out
+
+        
+        
+        
+        
+        
+        
+
         
         packets_received = 0
         
         debug_read_bytes = 0
         
-        while time_window == None or time() < t1 + time_window:
-            
-            if self.serial.in_waiting:
-                #logging.debug(bytes_read, packetBuffer)
-                byte = self.serial.read(1)[0]
-                #logging.debug(f'readByte {hex(byte)}, this is the {bytes_read}')
-                # Search for the header id
-                debug_read_bytes +=1
-                if state == SYNC:
-                    sync_buffer.append(byte)
-                    #logging.debug(f'{bytes(list(sync_buffer))}, {self.header_id}, {self.parser.pack('uint8', sync_buffer[-1] )[0]}, {self.parser.pack('uint8', sync_buffer[-1])[0]  in self.packet_structures}')
-                    if bytes(list(sync_buffer)[:-1]) == self.header_id\
-                        and self.parser.pack('uint8', sync_buffer[-1])[0] in self.packet_structures:
-                        logging.debug(f'Started parsing packet, read {debug_read_bytes} until found valid packet')
-                        
-                        bytes_read = len(sync_buffer)
-                        
-                        # Copy the sync buffer to the packet buffer
-                        for i in range(bytes_read):
-                            packetBuffer[i] = sync_buffer[i]
-                        
-                        state = HEADER
-                
-                # Parse the header
-                elif state == HEADER:
-                    # Read the header
-                    packetBuffer[bytes_read] = byte
-                    bytes_read += 1
-                    
-                    if bytes_read == self.header_length:
-                        byte_i = 0
-                        for key, parser_key in self.header_structure:
-                            header[key], l = self.parser.unpack(parser_key, packetBuffer, byte_i)
-                            #logging.debug(f'key:{header[key]}, key:{key}, parser:{parser_key}')
-                            byte_i += l
-                        #logging.debug(f'packetBuffer:{packetBuffer}')
-                        state = PAYLOAD
-                
-                # Parse the payload 
-                elif state == PAYLOAD:
-                    # Read the payload
-                    packetBuffer[bytes_read] = byte
-                    bytes_read += 1
-                    
-                    
-                    if bytes_read == header['length']:
-                        self.parser.packet_length = header['length']
-                        #logging.debug(f'packet_structures: {self.packet_structures}')
-                        #logging.debug(f'packet id:{header["id"]}')
-                        payload_structure = self.packet_structures[header['id']]
-                        byte_i = self.header_length
-
-                        for key, parser, dimentions, transform in payload_structure:
-                        
-                            # Create a temporary buffer to store the data for a certain key
-                            temp_container = [0]*dimentions
-
-                            # Parse the data and store in temp container
-                            for dim_i in range(dimentions):  
-                                temp_container[dim_i], l = self.parser.unpack(parser, packetBuffer, byte_i)
-
-                                temp_container[dim_i]*=transform
-                                byte_i += l
-
-                            # Store the data in the payload
-                            if dimentions == 1: payload[key] = temp_container[0]
-                            else: payload[key] = temp_container
-
-                        packets_received += 1
-                            
-                        if packet_function:
-                            packet_function({'header': header, 'payload': payload})
-                            
-                        if time_window or (count and packets_received >= count):
-                            return {'header': header, 'payload': payload}
-                        else:
-                            payload = {}
-                            header = {}
-                            state = SYNC
-                            bytes_read = 0
+        
 
     def transmit_packet(self, packet):
         #while self.serial.in_waiting: sleep(0.005)

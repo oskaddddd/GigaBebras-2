@@ -37,14 +37,15 @@ class receiver():
         
         
     def packet_handler(self, packet:dict):
-        return
+        
         match packet['header']['id']:
             case C.DATA_PACKET_ID:
                 self.out += packet['payload']['payload']
-                print(packet['payload'])
+                print(packet['payload']['packet_i'])
                 if packet['payload']['packet_i'] == packet['payload']['packet_count']:
                     print(self.out)
                     print(str(self.out))
+                    self.radio.stop_reading_packets()
                     exit()
             case C.DEBUG_PACKET_ID:
                 pass
@@ -157,18 +158,21 @@ class transmitter():
 
             packed_header, _ = self.pack_sturct(self.header, C.HEADER_STRUCTURE)
             logging.debug("Packed header")
+            logging.debug(self.payload)
             packet = packed_header + packed_payload
             
-            print([hex(b) for b in packed_payload])          
+                   
             self.radio.transmit_packet(packet)
+            logging.debug(packet[0:])
+            logging.debug(len(packet))
             self.queue.pop(0)
-            #sleep(0.1)
+            sleep(0.08)
             if wait_for_debug:
                 wait_for_debug = False
                 self.header['id'] = C.DATA_PACKET_ID
                 debug_packet = self.radio.read_packets(self.debug_time_window)
                 
-            sleep(0.01)
+            #sleep(0.1)
             
     
     # Add the bytes to queue 
@@ -189,6 +193,7 @@ class transmitter():
 
             if file_length%max_payload_length != 0:
                 self.queue.append(raw[-(file_length%max_payload_length):])
+        #exit()
                 
             
     def wait_for_CTS(self):
@@ -197,6 +202,6 @@ class transmitter():
         return 1
         
 if __name__ == '__main__':
-    body = transmitter('./test1')
+    body = transmitter('./test')
     
     
