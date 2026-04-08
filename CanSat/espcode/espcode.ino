@@ -12,9 +12,9 @@
 uint8_t net_ids[2] = {73, 42};
 
 //Pins
-#define radio_rx 16
-#define radio_tx 17
-#define gps_rx 4
+#define radio_rx 5
+#define radio_tx 18
+#define gps_rx 19
 
 
 //9DOF

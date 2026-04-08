@@ -10,6 +10,9 @@ import queue
 import threading
 
 import logging
+from Constants import Constants as C
+
+from Checksum import calculate_checksum
 
 
 #AT info { https://ardupilot.org/copter/docs/common-3dr-radio-advanced-configuration-and-technical-information.html }
@@ -44,6 +47,8 @@ class Parser():
         
         self.packet_length = -1
         
+
+        
     def unpack(self, format, b:bytes, start:int):
         if format in self.match_format:
             return (struct.unpack_from(self.match_format[format], b, start)[0], self.item_length[format])
@@ -63,7 +68,7 @@ class Parser():
         return((b[start]>>bit) & 1)
     
     def payload(self, b: bytes, start: int):
-        return (b[start:self.packet_length], self.packet_length-start) # Return the rest of the packet
+        return (b[start:self.packet_length-C.CHECKSUM_SIZE], self.packet_length-start-C.CHECKSUM_SIZE) # Return the rest of the packet
     
     def get_length(self, length_keys:tuple, key = lambda x: x):
         return sum(map(lambda x: self.item_length[key(x)], length_keys))
@@ -77,7 +82,7 @@ class Parser():
 
 
 class radio_serial():
-    def __init__(self, NET_ID, name:str = None, baud = 57600, set_parameters = False):
+    def __init__(self, NET_ID, name:str = None, baud = 57600, set_parameters = C.UPDATE_RADIO_SETTINGS):
         '''This function is responsible for handling the serial communication with the radio, radio settings and eceiving the packets from the radio. It is not respnsible for sending packets.'''
         
         self.radio_config = {
@@ -103,6 +108,12 @@ class radio_serial():
         if set_parameters: self.config_radio()
 
         self.parser = Parser()
+        
+        self.stop_event = threading.Event()
+        
+        
+        
+        
     
         
     # Establish serial communication with the radio
@@ -213,9 +224,8 @@ class radio_serial():
     def stop_reading_packets(self):
         self.stop_event.set()
             
-    def read_packets(self, packet_function, time_window = None, count = None):
+    def read_packets(self, packet_function, corrupt_packet_function = None, time_window = None, count = None):
        
-        self.stop_event = threading.Event()
         
         self.serial.read_all() #Clear buffer
         serial_buffer = queue.Queue()
@@ -232,10 +242,11 @@ class radio_serial():
             
             header = {}
             payload = {}
+            checksum = '\x00'
             
             rx_buffer = bytearray()
             
-            SYNC, HEADER, PAYLOAD = range(3)
+            SYNC, HEADER, PAYLOAD, CHECKSUM = range(4)
             state = SYNC
             
 
@@ -278,7 +289,7 @@ class radio_serial():
                 # Parse the payload 
                 elif state == PAYLOAD:
                     
-                    if len(rx_buffer) < header['length']: 
+                    if len(rx_buffer) < header['length']-C.CHECKSUM_SIZE: 
                         sleep(0.005)
                         continue # Wait for more data to flow in 
 
@@ -302,19 +313,46 @@ class radio_serial():
                         if dimentions == 1: payload[key] = temp_container[0]
                         else: payload[key] = temp_container
                         
-                    packets_received += 1
-                    logging.debug({'header': header, 'payload': payload})
-                    packet_function({'header': header, 'payload': payload})
-                    if time_window or (count and packets_received >= count):
-                        self.stop_event.set()
+                    state = CHECKSUM
+                    
+                elif state == CHECKSUM:
+                    if len(rx_buffer) < header['length']: 
+                        sleep(0.005)
+                        continue # Wait for more data to flow in 
+                    
+                    # Read the footer
+                    checksum = rx_buffer[-C.CHECKSUM_SIZE:]
+                    
+                    #Validate the checksum
+                    if checksum == calculate_checksum(rx_buffer[:(header['length'] - C.CHECKSUM_SIZE)]):
                         
+                        #Finish parsing the packet
+                        
+                        packets_received += 1
+                        logging.debug({'header': header, 'payload': payload})
+                        packet_function({'header': header, 'payload': payload, 'checksum': checksum})
+                    
+                        if time_window or (count and packets_received >= count):
+                            self.stop_event.set()
+                        
+                        else:
+                            logging.debug(f'Finished parsing packet')
+                            del rx_buffer[:header['length']]
+                            payload = {}
+                            header = {}
+                            state = SYNC
+                    
+                    # Packen invalid -- Reset the parser and pop the first byte of the buffer      
                     else:
-                        logging.debug(f'Finished parsing packet')
-                        del rx_buffer[:header['length']]
+                        
+                        if corrupt_packet_function:
+                            corrupt_packet_function({'header': header, 'payload': payload, 'checksum': checksum})
                         payload = {}
                         header = {}
                         state = SYNC
                         
+                        logging.debug(f"Popping some data: {rx_buffer[:1]}")
+                        rx_buffer.pop(0)
             
             
             

@@ -4,8 +4,10 @@ class Constants:
     DEBUG_PACKET_ID = b'\xef'
     DATA_PACKET_ID = b'\x24'
     CTS_PACKET_ID = b'\x12'
+    
+    RESEND_PACKET_ID = b'\x2c'
 
-
+    UPDATE_RADIO_SETTINGS = False    
 
     DEBUG_PACKET_STRUCTURE = (('angVelocity', 'int16', 3, 1/100),
                               ('acceleration', 'int16', 3, 1/100),
@@ -17,8 +19,8 @@ class Constants:
                               ('preasure', 'uint32', 1, 1/1000)
                               )
 
-    DATA_PACKET_STRUCTURE = (('packet_count', 'uint8', 1, 1),
-                         ('packet_i', 'uint8', 1, 1),
+    DATA_PACKET_STRUCTURE = (('packet_count', 'uint16', 1, 1),
+                         ('packet_i', 'uint16', 1, 1),
                          ('payload', 'payload', 1, 1))
 
     radio_name = None
@@ -26,3 +28,8 @@ class Constants:
     HEADER_STRUCTURE = (("header_id", 'uint16'),
                         ("id", 'byte'),
                         ('length', 'uint8'))
+    
+    
+    MAX_PACKET_SIZE = 96
+    
+    CHECKSUM_SIZE = 2
