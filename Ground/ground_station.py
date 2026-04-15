@@ -46,8 +46,58 @@ class receiver():
         # A range from zero to the number of packets, if a packet is received, that index gets popped
         self.received_packet_tracker = []
         
+        self.header_length = self.unpack.get_length(C.HEADER_STRUCTURE, key=lambda x: x[1])
+        
     def request_resend(self):
-        pass
+        
+               
+        payload = bytearray()
+        format = C.DATA_PACKET_STRUCTURE[0][1]
+        length = self.header_length + C.CHECKSUM_SIZE
+        
+        # Pack the indexes of the packets that need resending
+        for i in self.received_packet_tracker:
+            packed_i, l = self.unpack.pack(format, i)
+            payload+=packed_i
+            length += l
+            
+        header = \
+               {"header_id" : C.HEADER_ID,
+                'id': C.RESEND_PACKET_ID, 
+                'length': length}
+               
+        packed_header, _ = self.pack_sturct(header, C.HEADER_STRUCTURE)
+        
+        packet = packed_header + payload
+        packet += calculate_checksum(packet) 
+        
+        self.radio.transmit_packet(packet)
+               
+    
+    def pack_sturct(self, values:dict, structure:tuple):
+        out = bytearray(0)
+        snipet_length = 0
+        
+        # Loop throught the structure, and unpack the values stored into one bytearray
+        for key, format, *args in structure:
+            #logging.debug(f'unpacking item {values[key]} into format {format}')
+            
+            logging.debug(f'{values[key]}, {key}, {format}')
+            
+            #Ignore if items is already in byte form
+            if type(values[key]) == bytes and format != 'payload': 
+                #logging.debug(f'item already in byte form: {values[key]}')
+                out += bytearray(values[key])
+                snipet_length += self.unpack.item_length[format]
+                continue
+            
+            
+            b, l = self.unpack.pack(format, values[key])
+            #logging.debug(f'Unpacked item {values[key]} into {b}')
+            out += bytearray(b)
+            snipet_length += l
+        return (out, snipet_length)
+    
         
     
     def corrupt_packet_handler(self, packet:dict):
@@ -70,7 +120,7 @@ class receiver():
                     self.received_packet_tracker = list(range(packet['payload']['packet_count']))
                     
                     
-                if packet['payload']['packet_i'] == packet['payload']['packet_count']:
+                if packet['payload']['packet_i'] == packet['payload']['packet_count']-1:
                     
                     #If some packets got corrupted
                     if len(self.received_packet_tracker) != 0:
@@ -117,8 +167,9 @@ class transmitter():
         
         
         self.CTS_structure = (("CTS", 'uint8'))
-        self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure':C.DEBUG_PACKET_STRUCTURE},\
-                                            {'id': C.CTS_PACKET_ID, 'structure': self.CTS_structure})
+        self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure':C.DEBUG_PACKET_STRUCTURE},
+                                            {'id': C.CTS_PACKET_ID, 'structure': C.DEBUG_PACKET_STRUCTURE},
+                                            {'id': C.RESEND_PACKET_ID, 'structure': C.RESEND_PACKET_STRUCTURE})
         
         sleep(2)
         
@@ -153,6 +204,21 @@ class transmitter():
                 pass
             case C.CTS_PACKET_ID:
                 self.transmission_thread.start()
+                
+            case C.RESEND_PACKET_ID:
+                
+                format = C.DATA_PACKET_STRUCTURE[0][1] 
+                packet_count = len(packet['payload'])// self.unpack.item_length[format]  
+                start = 0
+                
+                # Loop through the payload and unpack the packet indexes which need to be retransmitted
+                for _ in range(packet_count):
+                    packet_i, l = self.unpack.unpack(format, packet['payload'], start)
+                    start += l
+                    
+                    self.queue.put(packet_i)
+                    
+                       
         
     def pack_sturct(self, values:dict, structure:tuple):
         out = bytearray(0)
@@ -178,8 +244,6 @@ class transmitter():
             snipet_length += l
         return (out, snipet_length)
             
-            
-    
     def transmit_data(self):
         
         header = \
@@ -216,8 +280,6 @@ class transmitter():
                     #print(wait >= time(), wait, time())
                     sleep(0.1)
             
-    
-     
     def build_transmission_queue(self):
         
         payload = \

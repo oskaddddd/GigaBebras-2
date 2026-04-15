@@ -22,6 +22,8 @@ class Constants:
     DATA_PACKET_STRUCTURE = (('packet_count', 'uint16', 1, 1),
                          ('packet_i', 'uint16', 1, 1),
                          ('payload', 'payload', 1, 1))
+    
+    RESEND_PACKET_STRUCTURE = (('payload', 'payload', 1, 1))
 
     radio_name = None
 
