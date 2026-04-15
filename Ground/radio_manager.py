@@ -268,7 +268,7 @@ class radio_serial():
                         logging.debug(f'Started parsing packet')
                         state = HEADER
                     else: 
-                        logging.debug(f"Popping some data: {rx_buffer[:1]}")
+                        logging.debug(f"Popping some data (SYNC): {rx_buffer[:1]}")
                         rx_buffer.pop(0)
                         
                 # Parse the header
@@ -298,6 +298,7 @@ class radio_serial():
                     payload_structure = self.packet_structures[header['id']]
                     
                     byte_i = self.header_length
+                    #logging.debug(f'buffer:{rx_buffer}, payload struct: {payload_structure}')
                     for key, parser, dimentions, transform in payload_structure:
                     
                         # Create a temporary buffer to store the data for a certain key
@@ -321,10 +322,17 @@ class radio_serial():
                         continue # Wait for more data to flow in 
                     
                     # Read the footer
-                    checksum = rx_buffer[-C.CHECKSUM_SIZE:]
+                    checksum = rx_buffer[header['length']-C.CHECKSUM_SIZE:header['length']]
                     
                     #Validate the checksum
-                    if checksum == calculate_checksum(rx_buffer[:(header['length'] - C.CHECKSUM_SIZE)]):
+                    
+                    calculated_checksum = calculate_checksum(rx_buffer[:(header['length'] - C.CHECKSUM_SIZE)])
+                    
+                    #logging.debug(f'checksum context: {rx_buffer[:(header["length"] - C.CHECKSUM_SIZE)]}, real checksum:{checksum}, got checksum:{calculated_checksum}, sanity: {checksum == calculated_checksum}')
+                    
+                    if checksum == calculated_checksum:
+                        
+                        
                         
                         #Finish parsing the packet
                         
@@ -351,7 +359,7 @@ class radio_serial():
                         header = {}
                         state = SYNC
                         
-                        logging.debug(f"Popping some data: {rx_buffer[:1]}")
+                        logging.debug(f"Popping some data (checksum): {rx_buffer[:1]}")
                         rx_buffer.pop(0)
             
             

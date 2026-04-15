@@ -1,3 +1,3 @@
-a = list(range(10))
+a = set(range(10))
 
-print(a[2:len(a)])
+print([x for x in a])

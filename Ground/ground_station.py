@@ -26,6 +26,9 @@ class receiver():
                 
         self.debug_time_window = 0.1
         
+        # Meant for testing reseng by faking packet loss, to disable set to true
+        self.resend = True
+        self.packets_to_lose = list(range(4, 14))
         
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
                                                       header_id=C.HEADER_ID)
@@ -34,11 +37,15 @@ class receiver():
         self.CTS_structure = (("CTS", 'uint8'))
         self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure':C.DEBUG_PACKET_STRUCTURE},\
                                             {'id': C.DATA_PACKET_ID, 'structure': C.DATA_PACKET_STRUCTURE})
-        
 
-        self.radio.read_packets(packet_function=self.packet_handler)
-        
         self.first_packet = True
+        
+        self.header_length = self.unpack.get_length(C.HEADER_STRUCTURE, key=lambda x: x[1])
+        
+        self.resend_format = C.DATA_PACKET_STRUCTURE[0][1]
+        self.max_resend_count = (C.MAX_PACKET_SIZE-self.header_length - C.CHECKSUM_SIZE) // self.unpack.item_length[self.resend_format]
+        
+        self.last_packet = None
         
         #A list that holds all the payloads in order
         self.payloads = []
@@ -46,20 +53,37 @@ class receiver():
         # A range from zero to the number of packets, if a packet is received, that index gets popped
         self.received_packet_tracker = []
         
-        self.header_length = self.unpack.get_length(C.HEADER_STRUCTURE, key=lambda x: x[1])
+        
+        
+        self.radio.read_packets(packet_function=self.packet_handler)
+        
+        
+        
+        
         
     def request_resend(self):
         
                
         payload = bytearray()
-        format = C.DATA_PACKET_STRUCTURE[0][1]
+        
         length = self.header_length + C.CHECKSUM_SIZE
         
+        count = min(len(self.received_packet_tracker), self.max_resend_count)
+        
+        
+        
+        
         # Pack the indexes of the packets that need resending
-        for i in self.received_packet_tracker:
-            packed_i, l = self.unpack.pack(format, i)
+        for i in range(count):
+            x = self.received_packet_tracker.pop()
+            packed_i, l = self.unpack.pack(self.resend_format, x)
             payload+=packed_i
             length += l
+            
+            self.last_packet = x
+
+
+            
             
         header = \
                {"header_id" : C.HEADER_ID,
@@ -112,15 +136,28 @@ class receiver():
         match packet['header']['id']:
             case C.DATA_PACKET_ID:
                 
+                packet_i = packet['payload']['packet_i']
+                
+                #Simulate packet loss
+                if packet_i in self.packets_to_lose and self.resend == False:
+                    return
+                
                 if self.first_packet:
                     self.first_packet = False
+                    self.packet_count = packet['payload']['packet_count']
+                    
+                    self.last_packet = self.packet_count-1
                     
                     # Initiate lists
-                    self.payloads = [0]*packet['payload']['packet_count']
-                    self.received_packet_tracker = list(range(packet['payload']['packet_count']))
+                    self.payloads = [0]*self.packet_count
+                    self.received_packet_tracker = set(range(self.packet_count))
                     
-                    
-                if packet['payload']['packet_i'] == packet['payload']['packet_count']-1:
+                self.received_packet_tracker.discard(packet_i)
+                self.payloads[packet_i] = packet['payload']['payload']
+                
+                
+                if packet_i == self.last_packet:
+                    self.resend = True
                     
                     #If some packets got corrupted
                     if len(self.received_packet_tracker) != 0:
@@ -129,12 +166,16 @@ class receiver():
                     #All packets succesfuly received
                     else:
                         
+                        out = bytearray()
+                        for payload in self.payloads:
+                            out += payload
                         with open('./output/out.tar.gz', 'wb') as f:
-                            f.write(self.out)
+                            f.write(out)
 
                         self.radio.stop_reading_packets()
                         exit()
-                        
+                
+                
             case C.DEBUG_PACKET_ID:
                 pass
         
@@ -171,7 +212,7 @@ class transmitter():
                                             {'id': C.CTS_PACKET_ID, 'structure': C.DEBUG_PACKET_STRUCTURE},
                                             {'id': C.RESEND_PACKET_ID, 'structure': C.RESEND_PACKET_STRUCTURE})
         
-        sleep(2)
+        sleep(1)
         
         self.dir = data_dir
         self.payloads = []
@@ -188,10 +229,12 @@ class transmitter():
         if self.DEBUG_MODE:
             print('started')
             sleep(1)
+            t1 = time()
             self.transmission_thread.start()
             print('started')
             self.transmission_thread.join()
-            print('stoped sending')
+            print('stoped sending', time()-t1-5)
+            
             self.radio.stop_reading_packets()
             print('sent signal to stop reading')
         
@@ -208,15 +251,18 @@ class transmitter():
             case C.RESEND_PACKET_ID:
                 
                 format = C.DATA_PACKET_STRUCTURE[0][1] 
-                packet_count = len(packet['payload'])// self.unpack.item_length[format]  
+                
+                packet_count = len(packet['payload']['payload'])// self.unpack.item_length[format]  
                 start = 0
                 
+                print(format, packet_count)
                 # Loop through the payload and unpack the packet indexes which need to be retransmitted
                 for _ in range(packet_count):
-                    packet_i, l = self.unpack.unpack(format, packet['payload'], start)
+                    packet_i, l = self.unpack.unpack(format, packet['payload']['payload'], start)
                     start += l
                     
                     self.queue.put(packet_i)
+                print(self.queue)
                     
                        
         
@@ -257,7 +303,7 @@ class transmitter():
             
             packed_payload = self.payloads[self.queue.get()]
             
-            print(packed_payload)
+            
             
             #Set the header variables and pack it
             header['length'] = len(packed_payload) + self.header_length + C.CHECKSUM_SIZE
@@ -267,10 +313,11 @@ class transmitter():
             
             packet = packet_wo_footer + calculate_checksum(packet_wo_footer)
                    
+            print(packet)
             self.radio.transmit_packet(packet)
             
             
-            sleep(0.05)
+            #sleep(0.01)
                             
             # If queue is empty wait a little to see if new data comes in 
             if self.queue.empty():
@@ -278,7 +325,7 @@ class transmitter():
                 print(wait >= time(), wait, time())
                 while wait >= time() and self.queue.empty():
                     #print(wait >= time(), wait, time())
-                    sleep(0.1)
+                    sleep(0.05)
             
     def build_transmission_queue(self):
         
@@ -333,6 +380,6 @@ class transmitter():
                 
         
 if __name__ == '__main__':
-    body = transmitter('./test')
+    body = transmitter('./in1.tar.gz')
     
     

@@ -23,7 +23,7 @@ class Constants:
                          ('packet_i', 'uint16', 1, 1),
                          ('payload', 'payload', 1, 1))
     
-    RESEND_PACKET_STRUCTURE = (('payload', 'payload', 1, 1))
+    RESEND_PACKET_STRUCTURE = [('payload', 'payload', 1, 1)]
 
     radio_name = None
 
@@ -35,3 +35,7 @@ class Constants:
     MAX_PACKET_SIZE = 96
     
     CHECKSUM_SIZE = 2
+    
+    #96 - 15 - 7.369 /// 8 - 7.3136
+    #128 - 12 - 7.265
+    #64 - 19 - 7.87
