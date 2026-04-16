@@ -224,7 +224,7 @@ class radio_serial():
     def stop_reading_packets(self):
         self.stop_event.set()
             
-    def read_packets(self, packet_function, corrupt_packet_function = None, time_window = None, count = None):
+    def read_packets(self, packet_function, corrupt_packet_function = None, timeout = None, timeout_function = None, count = None):
        
         
         self.serial.read_all() #Clear buffer
@@ -252,10 +252,16 @@ class radio_serial():
 
             t1 = time()
             
-            while (time_window == None or time() < t1 + time_window) and (not self.stop_event.is_set()):
+            while (not self.stop_event.is_set()):
+                t2 = time()
                 if serial_buffer.qsize() != 0:
+                    t1 = t2
                     rx_buffer.extend(serial_buffer.get())
                     #logging.debug(rx_buffer)
+                elif timeout:
+                    if (t2 - t1) > timeout:
+                        timeout_function()
+                        t1 = t2
 
                 
                 if state == SYNC:
@@ -340,7 +346,7 @@ class radio_serial():
                         logging.debug({'header': header, 'payload': payload})
                         packet_function({'header': header, 'payload': payload, 'checksum': checksum})
                     
-                        if time_window or (count and packets_received >= count):
+                        if (count and packets_received >= count):
                             self.stop_event.set()
                         
                         else:
@@ -364,8 +370,10 @@ class radio_serial():
             
             
             
+        
             
             
+        
             
         
         reading_thread = threading.Thread(target=read_serial, daemon=True)

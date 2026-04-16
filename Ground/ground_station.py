@@ -26,6 +26,10 @@ class receiver():
                 
         self.debug_time_window = 0.1
         
+        self.detected_packets = 0
+        
+        self.packet_count = -1
+        
         # Meant for testing reseng by faking packet loss, to disable set to true
         self.resend = True
         self.packets_to_lose = list(range(4, 14))
@@ -55,7 +59,10 @@ class receiver():
         
         
         
-        self.radio.read_packets(packet_function=self.packet_handler)
+        self.radio.read_packets(packet_function=self.packet_handler,
+                                corrupt_packet_function= self.corrupt_packet_handler,
+                                timeout=1.5,
+                                timeout_function=self.request_resend)
         
         
         
@@ -126,7 +133,9 @@ class receiver():
     
     def corrupt_packet_handler(self, packet:dict):
         if packet['header']['id'] == C.DATA_PACKET_ID:
-            if packet['payload']['packet_count'] - 1 == packet['payload']['packet_i']:
+            self.detected_packets += 1
+            
+            if self.packet_count - 1 == packet['payload']['packet_i'] or self.detected_packets == self.packet_count:
                 self.request_resend()
             
         
@@ -137,6 +146,8 @@ class receiver():
             case C.DATA_PACKET_ID:
                 
                 packet_i = packet['payload']['packet_i']
+                
+                self.detected_packets += 1
                 
                 #Simulate packet loss
                 if packet_i in self.packets_to_lose and self.resend == False:

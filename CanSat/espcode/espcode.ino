@@ -140,7 +140,9 @@ uint8_t debug_delay = 2; //s
 
 uint8_t length_byte_offset = 3;
 
-uint8_t last_packet_i;
+uint16_t last_packet_i;
+
+uint16_t packet_count;
 
 
 // Class vibe coded, dont know what happening inside
@@ -398,20 +400,29 @@ void read_packets() {
                 break;
 
             case READ_PAYLOAD:
+
                 // Wait for enough data
                 if (receive_buffer.available() < data_packet.header.length-CHECKSUM_LENGTH) {continue;}
-                
-                // Parse payload
-                data_packet.payload.packet_count = receive_buffer[i++];
-                data_packet.payload.packet_i = receive_buffer[i++];
-                
-                //TO FIX
-                if (data_packet.payload.packet_count == data_packet.payload.packet_i){
-                    can_state = TRANSMIT;
-                    setNetID(net_ids[1]);
-                    break;
+
+                switch (data_packet.header.id){
+                    case DATA_ID:
+                        // Parse payload
+                        data_packet.payload.packet_count = receive_buffer[i++];
+                        data_packet.payload.packet_i = receive_buffer[i++];
+
+                        //TO FIX
+                        if (last_packet_i == data_packet.payload.packet_i){
+                            can_state = TRANSMIT;
+                            setNetID(net_ids[1]);
+                        }
+                        break;
+                    
+                    case RESEND_ID:
+                        // Read the resend contents
+
                 }
-                // Reset
+                
+                
                 state = READ_CHECKSUM;
                     
                 
@@ -428,7 +439,9 @@ void read_packets() {
                         is_first_packet = false;
                         
                         //Set the finishing packet to be the last index
-                        last_packet_i = data_packet.payload.packet_count-1
+                        last_packet_i = data_packet.payload.packet_count-1;
+                        packet_count = data_packet.payload.packet_count;
+
                         if (!PacketTracker_Init(&tracker, data_packet.payload.packet_count)) {
                             Serial.println('Failed to alocate tracker buffer');
                             return; // Allocation failed
@@ -535,7 +548,7 @@ void read_sensors(){
 }
 
 
-void make_debug_packet()
+void debug()
 {
 
 }
@@ -543,6 +556,33 @@ void make_debug_packet()
 
 void transmit_packets()
 {
+    unsigned long t0 = millis();
+    for (int i = 0; i < packet_count; i++){
+
+        if (millis() - t0 > debug_delay){
+            debug();
+            t0 = millis();
+        }
+
+        //Get packet length
+        uint8_t packet_length = data_buffer[i*PACKET_BUFFER_SIZE+2];
+
+        //Copy to transmit buffer
+        memcpy(transmit_buffer, data_buffer+(i*PACKET_BUFFER_SIZE), packet_length);
+
+        //Transmit packet
+        radio.write(transmit_buffer, packet_length);
+    }
+    for (size_t i = 0; i < count; i++) {
+        // 1. Calculate pointer to the start of the current uint16_t
+        uint8_t* ptr = buffer + (i * 2);
+
+        // 2. Cast the pointer to uint16_t* and read the value
+        uint16_t value = *((uint16_t*)ptr);
+
+    }
+
+
 
 }
 
