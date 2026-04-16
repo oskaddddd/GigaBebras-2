@@ -258,8 +258,9 @@ class radio_serial():
                     t1 = t2
                     rx_buffer.extend(serial_buffer.get())
                     #logging.debug(rx_buffer)
-                elif timeout:
+                elif timeout and packets_received:
                     if (t2 - t1) > timeout:
+                        logging.warning('Timeout')
                         timeout_function()
                         t1 = t2
 

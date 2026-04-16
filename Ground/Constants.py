@@ -32,7 +32,7 @@ class Constants:
                         ('length', 'uint8'))
     
     
-    MAX_PACKET_SIZE = 96
+    MAX_PACKET_SIZE = 64
     
     CHECKSUM_SIZE = 2
     

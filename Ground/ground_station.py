@@ -30,9 +30,11 @@ class receiver():
         
         self.packet_count = -1
         
-        # Meant for testing reseng by faking packet loss, to disable set to true
-        self.resend = True
+        # Meant for testing reseng by faking packet loss, to disable set to true, ik its cxonfusing
+        self.resend = False
         self.packets_to_lose = list(range(4, 14))
+        self.packets_to_lose.append(165)
+        
         
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
                                                       header_id=C.HEADER_ID)
@@ -70,7 +72,7 @@ class receiver():
         
     def request_resend(self):
         
-               
+        self.resend = True
         payload = bytearray()
         
         length = self.header_length + C.CHECKSUM_SIZE
@@ -99,10 +101,10 @@ class receiver():
                
         packed_header, _ = self.pack_sturct(header, C.HEADER_STRUCTURE)
         
-        packet = packed_header + payload
-        packet += calculate_checksum(packet) 
+        self.resend_packet = packed_header + payload
+        self.resend_packet += calculate_checksum(self.resend_packet) 
         
-        self.radio.transmit_packet(packet)
+        self.radio.transmit_packet(self.resend_packet)
                
     
     def pack_sturct(self, values:dict, structure:tuple):
@@ -135,7 +137,9 @@ class receiver():
         if packet['header']['id'] == C.DATA_PACKET_ID:
             self.detected_packets += 1
             
-            if self.packet_count - 1 == packet['payload']['packet_i'] or self.detected_packets == self.packet_count:
+            # If its the last packet or we have received (including corupted) enough packets
+            if self.last_packet == packet['payload']['packet_i'] or self.detected_packets == self.packet_count:
+                logging.warning(f'packets {self.received_packet_tracker} corrupt or not received (INCLUDING LAST), requesting resend')
                 self.request_resend()
             
         
@@ -147,11 +151,14 @@ class receiver():
                 
                 packet_i = packet['payload']['packet_i']
                 
-                self.detected_packets += 1
+                
                 
                 #Simulate packet loss
                 if packet_i in self.packets_to_lose and self.resend == False:
+                    self.corrupt_packet_handler(packet)
                     return
+                
+                self.detected_packets += 1
                 
                 if self.first_packet:
                     self.first_packet = False
@@ -168,7 +175,7 @@ class receiver():
                 
                 
                 if packet_i == self.last_packet:
-                    self.resend = True
+
                     
                     #If some packets got corrupted
                     if len(self.received_packet_tracker) != 0:
@@ -180,9 +187,10 @@ class receiver():
                         out = bytearray()
                         for payload in self.payloads:
                             out += payload
-                        with open('./output/out.tar.gz', 'wb') as f:
+                        with open('./output/out.jpg', 'wb') as f:
                             f.write(out)
-
+                        
+                        logging.debug("exiting")
                         self.radio.stop_reading_packets()
                         exit()
                 
@@ -391,6 +399,6 @@ class transmitter():
                 
         
 if __name__ == '__main__':
-    body = transmitter('./in1.tar.gz')
+    body = transmitter('./in.jpg')
     
     

@@ -21,11 +21,11 @@ uint8_t* storage_buffer = NULL;
 
 #define PACKET_BUFFER_SIZE 96
 #define SERIAL_RX_SIZE 512
-#define MAX_PACKETS 1000;
+#define MAX_PACKETS 1000
 
 #define RESEND_TIMEOUT 1500 //millisecods
 
-uint16_t BUFFER_SIZE = MAX_PACKETS*PACKET_BUFFER_SIZE
+uint16_t BUFFER_SIZE = MAX_PACKETS*PACKET_BUFFER_SIZE;
 
 #define CHECKSUM_LENGTH 2
 //Network Ids that radios will use
@@ -66,6 +66,8 @@ typedef struct {
     uint16_t bitmapSize;  // Size in bytes: (N + 7) / 8
 } PacketTracker;
 
+
+
 PacketTracker tracker;
 uint8_t bitmapBuffer[(MAX_PACKETS + 7) / 8];  // 125 bytes
 
@@ -98,36 +100,34 @@ struct debug_payload {
 struct data_packet_struct {
     packet_header header;
     data_payload payload;
-}
+};
 struct debug_packet_struct {
     packet_header header;
     debug_payload payload;
-}
+};
+#pragma pack(pop)
+
+uint8_t header_length = sizeof(packet_header);
+uint8_t MAX_RESEND_COUNT = (PACKET_BUFFER_SIZE - header_length)/2;
+
 
 struct resend_packet_struct {
     packet_header header;
-    uint16_t buffer[MAX_RESEND_COUNT] {};
-}
-#pragma pack(pop)
-
-debug_packet_struct debug_packet;
-debug_packet.header.id = DEBUG_ID;
-
-data_packet_struct data_packet;
-data_packet.header.id = DATA_ID;
+    uint16_t* buffer = NULL;
+};
 
 resend_packet_struct resend_packet;
-resend_packet.header.id = RESEND_ID
 
+debug_packet_struct debug_packet;
 
+data_packet_struct data_packet;
 
 uint8_t can_state = RECEIVE;
 uint8_t packet_state = SYNC;
 
 
-uint8_t header_length = sizeof(header);
 
-uint8_t MAX_RESEND_COUNT = (PACKET_BUFFER_SIZE - header_length)/2;
+
 
 
 bool is_first_packet = true;
@@ -184,7 +184,7 @@ public:
         return buffer[index(i)];
     }
 
-    int available() {
+    int available() const {
         return (head - tail + capacity) % capacity;
     }
 
@@ -200,14 +200,14 @@ public:
         memcpy(dest, &buffer[tail], firstChunk);
 
         // 2. Copy second segment (if data wraps around to beginning)
-        if (bytesToRead > firstChunk) {
+        if (length > firstChunk) {
             memcpy(dest + firstChunk, &buffer[0], length - firstChunk);
         }
 
         // Advance tail (remove data from circular buffer)
-        tail = (tail + bytesToRead) % capacity;
+        tail = (tail + length) % capacity;
 
-        return bytesToRead;
+        return length;
     }
 };
 
@@ -218,6 +218,7 @@ void setup() {
     // Allocate the storage buffer
     storage_buffer = (uint8_t*) malloc(BUFFER_SIZE);
 
+    resend_packet.buffer = (uint16_t*) malloc(MAX_RESEND_COUNT);
 
     if (storage_buffer == NULL) {
       Serial.println("Failed to allocate buffer!");
@@ -225,7 +226,7 @@ void setup() {
       Serial.println(heap_caps_get_free_size(MALLOC_CAP_8BIT));
       return;
     }
-    if (!PacketTracker_Init(&tracker, bitmapBuffer, MAX_PACKETS)) {
+    if (!PacketTracker_Init(&tracker, MAX_PACKETS)) {
         Serial.println("BITMAP INIT FAILED!");
         return;
     }
@@ -235,10 +236,10 @@ void setup() {
     delay(500);
 
 
-    bme.begin()
+    bme.begin();
     
     // Configure Serial coms
-    radio.setRxBufferSize(SERIAL_RX_SIZE)
+    radio.setRxBufferSize(SERIAL_RX_SIZE);
     radio.setPins(radio_rx, radio_tx, radio_cts, radio_rts);
     radio.begin(57600, SERIAL_8N1);
     radio.setHwFlowCtrlMode(UART_HW_FLOWCTRL_CTS_RTS);
@@ -312,31 +313,31 @@ uint16_t calculate_checksum(const uint8_t* data, size_t length) {
 }
 
 
-//wont work, need fix because circular buffer
-void get_packet(size_t start_index) {
-    memcpy(receive_buffer, &storage_buffer[start_index], storage_buffer[start_index+length_byte_offset]);
-}
 
 bool request_resend(){
-    uint8_t count = PacketTracker_GetUnreceived(tracker, resend_packet.buffer, MAX_RESEND_COUNT);
+    uint8_t count = PacketTracker_GetUnreceived(&tracker, resend_packet.buffer, MAX_RESEND_COUNT);
     // All packets received
     if (count == 0){
-        return false
+        return false;
     }
 
     resend_packet.header.length = header_length + 2*count + 2;
 
 
-    memcpy(transmit_buffer, &header, header_length);
-    memcpy(transmit_buffer + header_length, data_buffer, count * sizeof(uint16_t));
+    memcpy(transmit_buffer, &resend_packet.header, header_length);
+    memcpy(transmit_buffer + header_length, resend_packet.buffer, count * sizeof(uint16_t));
 
     //Calculate and copy the checksum
     uint16_t checksum = calculate_checksum(transmit_buffer, resend_packet.header.length - 2);
     memcpy(transmit_buffer+resend_packet.header.length-2, &checksum, sizeof(uint16_t));
 
-    radio.write(transmit_buffer, packet_length);
+    radio.write(transmit_buffer, resend_packet.header.length);
 
 }
+
+
+uint8_t temp[PACKET_BUFFER_SIZE];
+
 
 void read_packets() {
     uint8_t i = 0;
@@ -347,8 +348,8 @@ void read_packets() {
         // Read bytes into the packet buffer
         uint16_t bytes_available = radio.available();
         if (bytes_available && receive_buffer.free()) {
-            uint8_t N = min(bytes_available, receive_buffer.free());
-            uint8_t temp[N];
+            uint8_t N = min((int)bytes_available, receive_buffer.free());
+            
 
             size_t bytes_read = radio.readBytes(temp, N);
             if (bytes_read > 0) {
@@ -365,9 +366,9 @@ void read_packets() {
 
 
         // State mashine to read packets
-        switch (state) {
+        switch (packet_state) {
 
-            case SYNC:
+            case SYNC: {
                 // Wait for enough data
                 if (receive_buffer.available() < 2) {continue;}
 
@@ -375,14 +376,16 @@ void read_packets() {
                 uint16_t possibleHeader = (receive_buffer[0] << 8) | receive_buffer[1];
                 i = 2;
 
-                if (possibleHeader == EXPECTED_HEADER_ID) {
-                    header.header_id = possibleHeader;
+                if (possibleHeader == HEADER_ID) {
+                    data_packet.header.header_id = possibleHeader;
 
-                    state = READ_HEADER;
+                    packet_state = READ_HEADER;
                 }
+                // Need to pop data
                 break;
 
-            case READ_HEADER:
+            }
+            case READ_HEADER: {
                 // Wait for enough data
                 if (receive_buffer.available() < header_length) {continue;}
 
@@ -392,16 +395,17 @@ void read_packets() {
                 // sanity check
                 if (data_packet.header.length > PACKET_BUFFER_SIZE) {
 
-                    state = SYNC;
+                    packet_state = SYNC;
                     break;
                 }
 
-                state = READ_PAYLOAD;
+                packet_state = READ_PAYLOAD;
                 break;
+            }
 
-            case READ_PAYLOAD:
+            case READ_PAYLOAD: {
 
-                // Wait for enough data
+                // Wait for enough data (excluding checksum)
                 if (receive_buffer.available() < data_packet.header.length-CHECKSUM_LENGTH) {continue;}
 
                 switch (data_packet.header.id){
@@ -418,21 +422,24 @@ void read_packets() {
                         break;
                     
                     case RESEND_ID:
+                        break;
                         // Read the resend contents
 
                 }
                 
-                
-                state = READ_CHECKSUM;
-                    
-                
+                packet_state = READ_CHECKSUM;
                 break;
-            case READ_CHECKSUM:
+            
+            }
+
+            case READ_CHECKSUM: {
                 // Wait for enough data
                 if (receive_buffer.available() < data_packet.header.length) {continue;}
 
-                uint16_t checksum = (receive_buffer[data_packet.header.length-2] << 8) | receive_buffer[data_packet.header.length-1];
-                if (checksum == calculate_checksum(receive_buffer, data_packet.header.length)){
+                receive_buffer.read(transmit_buffer, data_packet.header.length);
+
+                uint16_t stored_checksum = (transmit_buffer[data_packet.header.length - 2] << 8) | transmit_buffer[data_packet.header.length - 1];
+                if (stored_checksum == calculate_checksum(transmit_buffer, data_packet.header.length-2)){
                     
                     //Init the tracker system which i totally understand... some bitmaps and shii
                     if (is_first_packet){
@@ -456,6 +463,8 @@ void read_packets() {
                         data_packet.header.length
                     );
                 }
+                packet_state = SYNC;
+                i = 0;
 
                 if (data_packet.payload.packet_i == last_packet_i){
 
@@ -465,7 +474,7 @@ void read_packets() {
                         return;
                     }
                 }
-                
+            }    
 
         }
     }
@@ -474,7 +483,7 @@ void read_packets() {
 // Change this to your desired NETID
 
 
-String sendCommand(const uint message) {
+String sendCommand(const String& message) {
     String msg = message;
 
     if (message == "+++") {
@@ -527,17 +536,6 @@ void setNetID(uint8_t netid) {
 }
 
 void read_sensors(){
-  debug_packet.payload.acceleration[0] = gValue.x*100
-  debug_packet.payload.acceleration[1] = gValue.y*100
-  debug_packet.payload.acceleration[2] = gValue.z*100
-
-  debug_packet.payload.angVelocity[0] = gyr.x*100
-  debug_packet.payload.angVelocity[1] = gyr.y*100
-  debug_packet.payload.angVelocity[2] = gyr.z*100
-
-  debug_packet.payload.magneticField[0] = magValue.x*100
-  debug_packet.payload.magneticField[1] = magValue.y*100
-  debug_packet.payload.magneticField[2] = magValue.z*100
 
   float temp, hum, pres;
   bme.read(pres, temp, hum, tempUnit, presUnit);
@@ -565,22 +563,22 @@ void transmit_packets()
         }
 
         //Get packet length
-        uint8_t packet_length = data_buffer[i*PACKET_BUFFER_SIZE+2];
+        uint8_t packet_length = storage_buffer[i*PACKET_BUFFER_SIZE+2];
 
         //Copy to transmit buffer
-        memcpy(transmit_buffer, data_buffer+(i*PACKET_BUFFER_SIZE), packet_length);
+        memcpy(transmit_buffer, storage_buffer+(i*PACKET_BUFFER_SIZE), packet_length);
 
         //Transmit packet
         radio.write(transmit_buffer, packet_length);
     }
-    for (size_t i = 0; i < count; i++) {
-        // 1. Calculate pointer to the start of the current uint16_t
-        uint8_t* ptr = buffer + (i * 2);
-
-        // 2. Cast the pointer to uint16_t* and read the value
-        uint16_t value = *((uint16_t*)ptr);
-
-    }
+//    for (size_t i = 0; i < count; i++) {
+//        // 1. Calculate pointer to the start of the current uint16_t
+//        uint8_t* ptr = storage_buffer + (i * 2);
+//
+//        // 2. Cast the pointer to uint16_t* and read the value
+//        uint16_t value = *((uint16_t*)ptr);
+//
+//    }
 
 
 
@@ -589,7 +587,7 @@ void transmit_packets()
 
 void loop() {
 
-  switch (state){
+  switch (can_state){
     case RECEIVE:
       read_packets();
       break;
