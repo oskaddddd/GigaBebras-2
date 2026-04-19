@@ -10,54 +10,107 @@
 #include <stdlib.h>
 #include <string.h>
 
+//#include <FreeRTOS.h>
+//#include <queue.h>
+//#include <semphr.h>
 
-//Constants
+
+//PROTOCOL CONFIG
 #define HEADER_ID 0xf24f
 #define DEBUG_ID 0xef
 #define DATA_ID 0x24
-#define RESEND_ID 0x5a
+#define RESEND_ID 0x2c
 
-uint8_t* storage_buffer = NULL;
+//Network Ids that radios will use
+uint8_t net_ids[2] = {15, 63};
+#define CHECKSUM_LENGTH 2
+uint8_t length_byte_offset = 3;
 
-#define PACKET_BUFFER_SIZE 96
-#define SERIAL_RX_SIZE 512
-#define MAX_PACKETS 1000
+#define MAX_PACKET_SIZE 96 
+#define MAX_PACKETS 1000 
 
+
+#define SERIAL_RX_SIZE 512 //Serial fifo rx buffer size 
 #define RESEND_TIMEOUT 1500 //millisecods
 
-uint16_t BUFFER_SIZE = MAX_PACKETS*PACKET_BUFFER_SIZE;
+#define DEBUG_DELAY 2000 // miliseconds
 
-#define CHECKSUM_LENGTH 2
-//Network Ids that radios will use
-uint8_t net_ids[2] = {73, 42};
-
-//Pins
+//PINS
 #define radio_rx 5
 #define radio_tx 18
-#define radio_cts 16
-#define radio_rts 17
 
 #define gps_rx 19
 
-
-//Presure, temprature
-#include <BME280I2C.h>
-BME280I2C bme;
-BME280::TempUnit tempUnit = BME280::TempUnit_Celsius;
-BME280::PresUnit presUnit = BME280::PresUnit_Pa;
-
-//Calibrate the 9DOF module
-#define calibrate false
-
+//STATES
 //Global states
 #define RECEIVE 0
 #define TRANSMIT 1
+#define RESEND 2
 
 //Packet parsing states
 #define SYNC 0
 #define READ_HEADER 1
 #define READ_PAYLOAD 2
 #define READ_CHECKSUM 3
+
+uint8_t can_state = RECEIVE;
+uint8_t packet_state = SYNC;
+
+//PACKET STRUCTs
+// Put struct which will be copied in their entirety using memcpy in here
+#pragma pack(push, 1) 
+//struct for the packet header
+struct packet_header {
+  uint16_t header_id = htons(HEADER_ID); 
+  uint8_t id {};         
+  uint8_t length {};
+};
+
+struct debug_payload {
+  uint32_t gps[2] {};              // 8 bytes | 4 bytes * 2
+  uint16_t height {};              // 2 bytes | 2 bytes * 1
+  int16_t velocity {};             // 2 bytes | 2 bytes * 1
+  int16_t temperature = 2000;          // 2 bytes | 2 bytes * 1
+  uint32_t pressure;          // 1 bytes | 1 bytes * 1
+};
+
+struct debug_packet_struct {
+    packet_header header;
+    debug_payload payload;
+};
+#pragma pack(pop)
+
+
+//struct for the data payload
+struct data_payload {
+    uint16_t packet_count {};
+    uint16_t packet_i {};
+    //Payload is ignored as the packet is not fully parsed,
+    //instead it is stored unparsed in a file and later retransmited
+};
+//Structs for the packets
+struct data_packet_struct {
+    packet_header header;
+    data_payload payload;
+};
+struct resend_packet_struct {
+    packet_header header;
+    uint16_t* buffer = NULL;
+};
+
+
+resend_packet_struct resend_packet;
+
+debug_packet_struct debug_packet;
+
+data_packet_struct data_packet;
+
+
+//BUFFERS
+
+//Buffer for storing packets, initialization in setup(), since more memory is available during runtime than compile
+uint16_t STORAGE_BUFFER_SIZE = MAX_PACKETS*MAX_PACKET_SIZE;
+uint8_t* storage_buffer = NULL;
 
 //Bitmap for the packet tracker
 typedef struct {
@@ -66,92 +119,26 @@ typedef struct {
     uint16_t bitmapSize;  // Size in bytes: (N + 7) / 8
 } PacketTracker;
 
-
-
 PacketTracker tracker;
 uint8_t bitmapBuffer[(MAX_PACKETS + 7) / 8];  // 125 bytes
 
-#pragma pack(push, 1) 
-//struct for the packet header
-struct packet_header {
-  uint16_t header_id = HEADER_ID; 
-  uint8_t id {};         
-  uint8_t length {};
-};
-//struct for the data payload
-struct data_payload {
-    uint16_t packet_count {};
-    uint16_t packet_i {};
-    //Payload is ignored as the packet is not fully parsed,
-    //instead it is stored unparsed in a file and later retransmited
-};
-struct debug_payload {
-  int16_t angVelocity[3] {0, 0, 0};       // 6 bytes | 2 bytes * 3 
-  int16_t acceleration[3] {};      // 6 bytes | 2 bytes * 3 
-  int16_t magneticField[3] {};     // 6 bytes | 2 bytes * 3 
-  uint32_t gps[2] {};              // 8 bytes | 4 bytes * 2
-  uint16_t height {};              // 2 bytes | 2 bytes * 1
-  int16_t velocity {};             // 2 bytes | 2 bytes * 1
-  int16_t temperature = 2000;          // 2 bytes | 2 bytes * 1
-  uint32_t pressure;          // 1 bytes | 1 bytes * 1
-};
-
-//Structs for the packets
-struct data_packet_struct {
-    packet_header header;
-    data_payload payload;
-};
-struct debug_packet_struct {
-    packet_header header;
-    debug_payload payload;
-};
-#pragma pack(pop)
-
 uint8_t header_length = sizeof(packet_header);
-uint8_t MAX_RESEND_COUNT = (PACKET_BUFFER_SIZE - header_length)/2;
-
-
-struct resend_packet_struct {
-    packet_header header;
-    uint16_t* buffer = NULL;
-};
-
-resend_packet_struct resend_packet;
-
-debug_packet_struct debug_packet;
-
-data_packet_struct data_packet;
-
-uint8_t can_state = RECEIVE;
-uint8_t packet_state = SYNC;
+uint8_t MAX_RESEND_COUNT = (MAX_PACKET_SIZE - header_length)/2;
 
 
 
+uint8_t transmit_buffer[MAX_PACKET_SIZE];
 
-
-
-bool is_first_packet = true;
-
-//Define serials
-HardwareSerial& radio = Serial2;
-HardwareSerial& gps   = Serial1;
-
-uint8_t debug_delay = 2; //s
-
-uint8_t length_byte_offset = 3;
-
-uint16_t last_packet_i;
-
-uint16_t packet_count;
-
+// Queue to hold packet IDs (uint16_t)
+//QueueHandle_t resendQueue; 
 
 // Class vibe coded, dont know what happening inside
 class CircularBuffer {
 private:
-    uint8_t buffer[PACKET_BUFFER_SIZE];  // Size as needed
+    uint8_t buffer[MAX_PACKET_SIZE*2];  // Size as needed
     int head = 0;
     int tail = 0;
-    static const int capacity = PACKET_BUFFER_SIZE;
+    static const int capacity = MAX_PACKET_SIZE+10;
 
     int index(int i) const { return (tail + i) % capacity; }
 
@@ -172,9 +159,9 @@ public:
     }
 
     // Pop a single byte
-    bool pop(uint8_t* byte) {
+    bool pop() {
         if (head == tail) return false;  // empty
-        *byte = buffer[tail];
+        buffer[tail];
         tail = (tail + 1) % capacity;
         return true;
     }
@@ -204,19 +191,49 @@ public:
             memcpy(dest + firstChunk, &buffer[0], length - firstChunk);
         }
 
+        return length;
+    }
+    void del(uint8_t length){
         // Advance tail (remove data from circular buffer)
         tail = (tail + length) % capacity;
-
-        return length;
     }
 };
 
 CircularBuffer receive_buffer;
-uint8_t transmit_buffer[PACKET_BUFFER_SIZE];
+
+
+
+//HARDWARE
+
+//Presure, temprature
+#include <BME280I2C.h>
+BME280I2C bme;
+BME280::TempUnit tempUnit = BME280::TempUnit_Celsius;
+BME280::PresUnit presUnit = BME280::PresUnit_Pa;
+
+//gps
+
+//Define serials
+HardwareSerial& radio = Serial2;
+HardwareSerial& gps   = Serial1;
+
+
+//OTHER VARIABLES
+bool is_first_packet = true;
+uint16_t last_packet_i;
+uint16_t packet_count;
+uint16_t packets_seen = 0;
+uint16_t packets_seen_target = 0;
+
+
 
 void setup() {
-    // Allocate the storage buffer
-    storage_buffer = (uint8_t*) malloc(BUFFER_SIZE);
+    Serial.begin(115200);
+    
+    delay(500);
+
+    // Allocate buffers
+    storage_buffer = (uint8_t*) malloc(STORAGE_BUFFER_SIZE);
 
     resend_packet.buffer = (uint16_t*) malloc(MAX_RESEND_COUNT);
 
@@ -226,30 +243,114 @@ void setup() {
       Serial.println(heap_caps_get_free_size(MALLOC_CAP_8BIT));
       return;
     }
+
+    // Initialize packet tracker
     if (!PacketTracker_Init(&tracker, MAX_PACKETS)) {
         Serial.println("BITMAP INIT FAILED!");
         return;
     }
 
-    Serial.begin(115200);
+    resend_packet.header.id = RESEND_ID;
+    debug_packet.header.id = DEBUG_ID;
+
     Wire.begin();
     delay(500);
 
-
-    bme.begin();
-    
     // Configure Serial coms
     radio.setRxBufferSize(SERIAL_RX_SIZE);
-    radio.setPins(radio_rx, radio_tx, radio_cts, radio_rts);
+    radio.setTxBufferSize(MAX_PACKET_SIZE);
+    radio.setPins(radio_rx, radio_tx);
+
+
     radio.begin(57600, SERIAL_8N1);
-    radio.setHwFlowCtrlMode(UART_HW_FLOWCTRL_CTS_RTS);
 
+    //gps.begin(115200, SERIAL_8N1, gps_rx, -1);
 
-    gps.begin(115200, SERIAL_8N1, gps_rx, -1);
+    //Initialize BME
+    //bme.begin();
 
-    setNetID(net_ids[0]);
+    delay(1000);
+
+    //Set the network ID to receive
+    //setNetID(net_ids[1]);
 }
 
+
+//HARDWARE FUNCTIONS
+
+String sendCommand(const String& message) {
+    String msg = message;
+    int lenToSkip = 0;
+
+    // 1. Send the message using write() to match Python's byte transmission
+    // Calculate the length of the data being sent for echo stripping later
+    if (message == "+++") {
+        lenToSkip = message.length(); // Length of "+++" is 3
+        // Write raw bytes (cast const char* to uint8_t* for compatibility)
+        radio.write((const uint8_t*)msg.c_str(), lenToSkip);
+        delay(1000);
+    } else {
+        msg += "\r\n";
+        lenToSkip = msg.length(); // Length of message + "\r\n"
+        radio.write((const uint8_t*)msg.c_str(), lenToSkip);
+    }
+
+    // 2. Wait for response to stabilize
+    size_t lastSize = radio.available();
+    delay(100);
+
+    while (true) {
+        size_t currentSize = radio.available();
+        if (currentSize == lastSize) break;
+        lastSize = currentSize;
+        delay(50);
+    }
+
+
+    // Second, read the remaining bytes into the response string
+    String response = "";
+    while (radio.available()) {
+        response += (char)radio.read();
+    }
+
+    return response;
+}
+
+void setNetID(uint8_t netid) {
+    Serial.println("SETTING NET_ID");
+    delay(1000);
+
+    // Enter AT mode
+    Serial.println(sendCommand("+++"));
+
+    // Build command string
+    String cmd = "ATS3=" + String(netid);
+
+    Serial.println("Setting NETID...");
+    Serial.println(sendCommand(cmd));
+
+    // Save settings
+    Serial.println("Saving...");
+    Serial.println(sendCommand("AT&W"));
+
+    // Reboot radio
+    Serial.println("Rebooting...");
+    Serial.println(sendCommand("ATZ"));
+    delay(1000);
+}
+
+void read_sensors(){
+
+  float temp, hum, pres;
+  bme.read(pres, temp, hum, tempUnit, presUnit);
+
+  debug_packet.payload.temperature = temp*100;
+  debug_packet.payload.pressure = temp*100;
+
+}
+
+
+//PACKET TRACKER FUNCTION
 bool PacketTracker_Init(PacketTracker* tracker, uint16_t n) {
     if (!tracker || n == 0) return false;
 
@@ -302,6 +403,7 @@ uint16_t PacketTracker_GetUnreceived(PacketTracker* tracker, uint16_t* outIds, u
 }
 
 
+//CHECKSUM
 uint16_t calculate_checksum(const uint8_t* data, size_t length) {
     uint8_t sum1 = 0;
     uint8_t sum2 = 0;
@@ -313,15 +415,19 @@ uint16_t calculate_checksum(const uint8_t* data, size_t length) {
 }
 
 
-
+//PACKET FUNCTION
 bool request_resend(){
     uint8_t count = PacketTracker_GetUnreceived(&tracker, resend_packet.buffer, MAX_RESEND_COUNT);
     // All packets received
     if (count == 0){
         return false;
     }
-
+    Serial.print("\n Asking for retransmission of packets: ");
+    Serial.println(count);
     resend_packet.header.length = header_length + 2*count + 2;
+
+    last_packet_i = resend_packet.buffer[count-1];
+    packets_seen_target = count;
 
 
     memcpy(transmit_buffer, &resend_packet.header, header_length);
@@ -331,37 +437,60 @@ bool request_resend(){
     uint16_t checksum = calculate_checksum(transmit_buffer, resend_packet.header.length - 2);
     memcpy(transmit_buffer+resend_packet.header.length-2, &checksum, sizeof(uint16_t));
 
-    radio.write(transmit_buffer, resend_packet.header.length);
+    send_packet(resend_packet.header.length);
 
 }
 
+void debug()
+{
 
-uint8_t temp[PACKET_BUFFER_SIZE];
+}
+
+uint8_t temp[MAX_PACKET_SIZE];
 
 
 void read_packets() {
+
+    //Bytes parsed tracker
     uint8_t i = 0;
+
+    //timeout tracker
     unsigned long t1 = millis();
+    Serial.println("startiing packet parser");
 
     while (true) {
 
+        
         // Read bytes into the packet buffer
         uint16_t bytes_available = radio.available();
+        
         if (bytes_available && receive_buffer.free()) {
+            Serial.println("Reading bytes");
+            //Number of bytes to read
             uint8_t N = min((int)bytes_available, receive_buffer.free());
             
-
+            //How many bytes were actually read
             size_t bytes_read = radio.readBytes(temp, N);
             if (bytes_read > 0) {
                 receive_buffer.push(temp, bytes_read);  // Push all read bytes
             }
+
+            //Reset timeout tracker
             t1 = millis();
+            Serial.print(bytes_available);
+            Serial.print(" ");
+            Serial.print(receive_buffer.free());
+            Serial.print(" ");
+            Serial.println(receive_buffer.available()); 
         }
         //In case last packet was corupted and the resend did not trigger a timeout is in place
         else{
-            if ((millis() - t1) >= RESEND_TIMEOUT){
-                request_resend();
+            
+
+            if ((millis() - t1) >= RESEND_TIMEOUT && is_first_packet == false){
+                //request_resend();
             }
+            delay(0.001);
         }
 
 
@@ -377,11 +506,22 @@ void read_packets() {
                 i = 2;
 
                 if (possibleHeader == HEADER_ID) {
+                    Serial.println("Started parsing packet");
                     data_packet.header.header_id = possibleHeader;
 
                     packet_state = READ_HEADER;
                 }
-                // Need to pop data
+                else{
+                    //Pop the first byte
+                    receive_buffer.pop();
+                    Serial.println("POPPING DATA");
+                }
+
+                Serial.print(bytes_available);
+                Serial.print(" ");
+                Serial.print(receive_buffer.free());
+                Serial.print(" ");
+                Serial.println(receive_buffer.available());
                 break;
 
             }
@@ -389,13 +529,15 @@ void read_packets() {
                 // Wait for enough data
                 if (receive_buffer.available() < header_length) {continue;}
 
+                Serial.println("Started parsing Header");
                 data_packet.header.id = receive_buffer[i++];
                 data_packet.header.length = receive_buffer[i++];
 
                 // sanity check
-                if (data_packet.header.length > PACKET_BUFFER_SIZE) {
+                if (data_packet.header.length > MAX_PACKET_SIZE) {
 
                     packet_state = SYNC;
+                    receive_buffer.pop();
                     break;
                 }
 
@@ -407,24 +549,27 @@ void read_packets() {
 
                 // Wait for enough data (excluding checksum)
                 if (receive_buffer.available() < data_packet.header.length-CHECKSUM_LENGTH) {continue;}
+                Serial.println("Started parsing Payload");
 
                 switch (data_packet.header.id){
-                    case DATA_ID:
+                    case DATA_ID:{
                         // Parse payload
-                        data_packet.payload.packet_count = receive_buffer[i++];
-                        data_packet.payload.packet_i = receive_buffer[i++];
+                        packets_seen += 1;
+                        data_packet.payload.packet_count = (receive_buffer[i+1] << 8) | receive_buffer[i];
+                        i+=2;
+                        data_packet.payload.packet_i = (receive_buffer[i+1] << 8) | receive_buffer[i];
+                        i+=2;
 
-                        //TO FIX
-                        if (last_packet_i == data_packet.payload.packet_i){
-                            can_state = TRANSMIT;
-                            setNetID(net_ids[1]);
-                        }
-                        break;
+                    }
                     
-                    case RESEND_ID:
-                        break;
-                        // Read the resend contents
+                    case RESEND_ID:{
 
+                        // Read the resend contents
+                        //resend_packet.buffer
+
+                        break;
+                        
+                    }
                 }
                 
                 packet_state = READ_CHECKSUM;
@@ -436,11 +581,26 @@ void read_packets() {
                 // Wait for enough data
                 if (receive_buffer.available() < data_packet.header.length) {continue;}
 
-                receive_buffer.read(transmit_buffer, data_packet.header.length);
+                Serial.print("Started parsing CHECKSUM, packet_i:");
+                Serial.print(data_packet.payload.packet_i);
+                Serial.print(" packet_length:");
+                Serial.println(data_packet.header.length);
 
-                uint16_t stored_checksum = (transmit_buffer[data_packet.header.length - 2] << 8) | transmit_buffer[data_packet.header.length - 1];
-                if (stored_checksum == calculate_checksum(transmit_buffer, data_packet.header.length-2)){
+                receive_buffer.read(temp, data_packet.header.length);
+
+                // I hate endians :))
+                uint16_t stored_checksum = (temp[data_packet.header.length - 1] << 8) | temp[data_packet.header.length - 2];
+                uint16_t calc_checksum = calculate_checksum(temp, data_packet.header.length-2);
+
+                Serial.print("stored:");
+                Serial.println(stored_checksum);
+                Serial.print("calc:");
+                Serial.println(calc_checksum);
+                if (stored_checksum == calc_checksum){
+                    //Delete processed packet
+                    receive_buffer.del(data_packet.header.length);
                     
+                    Serial.println("CHECKSUM MATCH");
                     //Init the tracker system which i totally understand... some bitmaps and shii
                     if (is_first_packet){
                         is_first_packet = false;
@@ -448,9 +608,10 @@ void read_packets() {
                         //Set the finishing packet to be the last index
                         last_packet_i = data_packet.payload.packet_count-1;
                         packet_count = data_packet.payload.packet_count;
+                        packets_seen_target = packet_count;
 
                         if (!PacketTracker_Init(&tracker, data_packet.payload.packet_count)) {
-                            Serial.println('Failed to alocate tracker buffer');
+                            Serial.println("Failed to alocate tracker buffer");
                             return; // Allocation failed
                         }
                     }
@@ -458,97 +619,42 @@ void read_packets() {
                     PacketTracker_SetReceived(&tracker, data_packet.payload.packet_i);
                     
                     //Store packet
-                    receive_buffer.read(
-                        &storage_buffer[PACKET_BUFFER_SIZE*data_packet.payload.packet_i],
-                        data_packet.header.length
-                    );
+                    memcpy(&storage_buffer[MAX_PACKET_SIZE*data_packet.payload.packet_i],
+                        temp,
+                        data_packet.header.length);
+                    
+                    Serial.write(temp, data_packet.header.length);
+                    Serial.println("\n Finished parsing packet");
+
+                }
+                else{
+                    receive_buffer.pop();
                 }
                 packet_state = SYNC;
                 i = 0;
 
-                if (data_packet.payload.packet_i == last_packet_i){
-
+                if (is_first_packet == false && (data_packet.payload.packet_i == last_packet_i || packets_seen == packets_seen_target)){
+                    Serial.println("Read final packet");
+                    packets_seen = 0;
                     //if no more packets need to be resent - start transmitting
                     if (!request_resend()){
                         can_state = TRANSMIT;
                         return;
                     }
+                    
                 }
-            }    
+            }   
+            
 
         }
     }
 }
 
-// Change this to your desired NETID
 
 
-String sendCommand(const String& message) {
-    String msg = message;
-
-    if (message == "+++") {
-        radio.print(msg);
-        delay(1000);
-    } else {
-        msg += "\r\n";
-        radio.print(msg);
-    }
-
-    // Wait for response to stabilize
-    size_t lastSize = radio.available();
-    delay(100);
-
-    while (true) {
-        size_t currentSize = radio.available();
-        if (currentSize == lastSize) break;
-        lastSize = currentSize;
-        delay(50);
-    }
-
-    // Read response
-    String response = "";
-    while (radio.available()) {
-        response += (char)radio.read();
-    }
-
-    return response;
-}
-
-void setNetID(uint8_t netid) {
-    delay(1000);
-
-    // Enter AT mode
-    sendCommand("+++");
-
-    // Build command string
-    String cmd = "ATS3=" + String(netid);
-
-    Serial.println("Setting NETID...");
-    Serial.println(sendCommand(cmd));
-
-    // Save settings
-    Serial.println("Saving...");
-    Serial.println(sendCommand("AT&W"));
-
-    // Reboot radio
-    Serial.println("Rebooting...");
-    Serial.println(sendCommand("ATZ"));
-}
-
-void read_sensors(){
-
-  float temp, hum, pres;
-  bme.read(pres, temp, hum, tempUnit, presUnit);
-
-  debug_packet.payload.temperature = temp*100;
-  debug_packet.payload.pressure = temp*100;
-
-}
-
-
-void debug()
-{
-
+void send_packet(uint8_t length){
+    radio.flush();
+    radio.write(transmit_buffer, length);
 }
 
 
@@ -557,19 +663,19 @@ void transmit_packets()
     unsigned long t0 = millis();
     for (int i = 0; i < packet_count; i++){
 
-        if (millis() - t0 > debug_delay){
+        if (millis() - t0 > DEBUG_DELAY){
             debug();
             t0 = millis();
         }
 
         //Get packet length
-        uint8_t packet_length = storage_buffer[i*PACKET_BUFFER_SIZE+2];
+        uint8_t packet_length = storage_buffer[i*MAX_PACKET_SIZE+length_byte_offset];
 
         //Copy to transmit buffer
-        memcpy(transmit_buffer, storage_buffer+(i*PACKET_BUFFER_SIZE), packet_length);
+        memcpy(transmit_buffer, storage_buffer+(i*MAX_PACKET_SIZE), packet_length);
 
         //Transmit packet
-        radio.write(transmit_buffer, packet_length);
+        send_packet(packet_length);
     }
 //    for (size_t i = 0; i < count; i++) {
 //        // 1. Calculate pointer to the start of the current uint16_t
@@ -586,13 +692,16 @@ void transmit_packets()
 
 
 void loop() {
+    
+    read_packets();
+    return;
+    switch (can_state){
+        case RECEIVE:
+            read_packets();
+            break;
+        case TRANSMIT:
+            transmit_packets();
+            break;
 
-  switch (can_state){
-    case RECEIVE:
-      read_packets();
-      break;
-    case TRANSMIT:
-      transmit_packets();
-
-  }
+    }
 }

@@ -1,5 +1,5 @@
 class Constants:
-    NET_ID = 15
+    NET_ID = 63
     HEADER_ID =  b'\xf2\x4f' #65536 max
     DEBUG_PACKET_ID = b'\xef'
     DATA_PACKET_ID = b'\x24'
@@ -9,10 +9,7 @@ class Constants:
 
     UPDATE_RADIO_SETTINGS = False    
 
-    DEBUG_PACKET_STRUCTURE = (('angVelocity', 'int16', 3, 1/100),
-                              ('acceleration', 'int16', 3, 1/100),
-                              ('magneticField', 'int16', 3, 1/100),
-                              ('gps', 'uint32', 2, 1),
+    DEBUG_PACKET_STRUCTURE = (('gps', 'uint32', 2, 1),
                               ('height', 'uint16', 1, 1),
                               ('velocity', 'int16', 1, 1),
                               ('temprature', 'int16', 1, 1/100),
@@ -32,7 +29,7 @@ class Constants:
                         ('length', 'uint8'))
     
     
-    MAX_PACKET_SIZE = 64
+    MAX_PACKET_SIZE = 96
     
     CHECKSUM_SIZE = 2
     

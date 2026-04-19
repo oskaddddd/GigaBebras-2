@@ -31,7 +31,7 @@ class receiver():
         self.packet_count = -1
         
         # Meant for testing reseng by faking packet loss, to disable set to true, ik its cxonfusing
-        self.resend = False
+        self.resend = True
         self.packets_to_lose = list(range(4, 14))
         self.packets_to_lose.append(165)
         
@@ -336,7 +336,7 @@ class transmitter():
             self.radio.transmit_packet(packet)
             
             
-            #sleep(0.01)
+            #sleep(0.5)
                             
             # If queue is empty wait a little to see if new data comes in 
             if self.queue.empty():
@@ -399,6 +399,6 @@ class transmitter():
                 
         
 if __name__ == '__main__':
-    body = transmitter('./in.jpg')
+    body = transmitter('./test')
     
     

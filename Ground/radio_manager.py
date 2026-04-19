@@ -100,9 +100,11 @@ class radio_serial():
             "DUTY_CYCLE": None,
             "LBT_RSSI": None,
             "MANCHESTER": None,
-            "RTSCTS": 1,
+            "RTSCTS": 0,
             "MAX_WINDOW": None
         }
+        
+        print("WTTFF:", self.radio_config)
         
         self.serial_setup(name, baud)
         if set_parameters: self.config_radio()
@@ -185,7 +187,7 @@ class radio_serial():
             key, value = temp_name_val_combo.split('=')
     
             # If a value for a key does not match, save it to the dict
-            if key in self.radio_config and self.radio_config[key] and str(self.radio_config[key]) != value:
+            if key in self.radio_config and self.radio_config[key] != None and str(self.radio_config[key]) != value:
 
                 logging.debug(f'Chnaging radio parameter {key}: [{value}] to [{self.radio_config[key]}]')
                 message = f'AT{command}={self.radio_config[key]}'
