@@ -7,16 +7,26 @@ from Constants import Constants as C
 from queue import Queue
 
 from math import ceil
-
+from sortedcontainers import SortedList
 
 from Checksum import calculate_checksum
 
+from gradient import gradient
 
+import json
 
 logging.getLogger().setLevel(logging.DEBUG)
 
+debug_dict = []
 
 
+with open("data.json", 'r') as f:
+    debug_dict = json.load(f)
+    if len(debug_dict) != 0:
+        if input("There is data in data.json, clear to delete? y/n:") == 'y':
+            dictData = []
+
+debug_data = SortedList(debug_dict, key=lambda x: -x['timestamp'])
 
 class receiver():
     def __init__(self):

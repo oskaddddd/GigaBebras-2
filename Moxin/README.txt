@@ -1,4 +1,0 @@
-Moxon antenna (adjustuble fine tunning) by celiktse on Thingiverse: https://www.thingiverse.com/thing:2967791
-
-Summary:
-This is an 433 mhz moxon antenna chasis design.Designed for 2mm diameter of cooper wire need to be used on it. Advantages;There are two screw on it to provide an variable clearence adjustment. Thus, you can change the frequency according to your requeriments between 433 - 470mhz. You can easily rotate the head of antenna so you dont need to rotate your transmitter but only antenna head. There is a arrow shows you how you positioned your antenna. For wiring, you can use the link below.https://www.youtube.com/watch?v=bESvjNqzaJINOTE: There should be 15.9mm clearence between mirror and chasis for 433 mhz. This is already indicated on antenna if you see carefully. 
