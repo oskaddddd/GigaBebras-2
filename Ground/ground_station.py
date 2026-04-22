@@ -37,7 +37,7 @@ class receiver():
         
         
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
-                                                      header_id=C.HEADER_ID)
+                                                      header_id=C.CAN_HEADER_ID)
 
         
         self.CTS_structure = (("CTS", 'uint8'))
@@ -95,7 +95,7 @@ class receiver():
             
             
         header = \
-               {"header_id" : C.HEADER_ID,
+               {"header_id" : C.GROUND_HEADER_ID,
                 'id': C.RESEND_PACKET_ID, 
                 'length': length}
                
@@ -196,7 +196,7 @@ class receiver():
                 
                 
             case C.DEBUG_PACKET_ID:
-                pass
+                print("Debug packet:", packet)
         
     def parse_data():
         
@@ -223,7 +223,7 @@ class transmitter():
         
         # Configure radio for receiving
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
-                                                      header_id=C.HEADER_ID)
+                                                      header_id=C.CAN_HEADER_ID)
         
         
         self.CTS_structure = (("CTS", 'uint8'))
@@ -263,7 +263,7 @@ class transmitter():
         
         match packet['header']['id']:
             case C.DEBUG_PACKET_ID:
-                pass
+                print("Debug packet:", packet)
             case C.CTS_PACKET_ID:
                 self.transmission_thread.start()
                 
@@ -312,7 +312,7 @@ class transmitter():
     def transmit_data(self):
         
         header = \
-               {"header_id" : C.HEADER_ID,
+               {"header_id" : C.GROUND_HEADER_ID,
                 'id': C.DATA_PACKET_ID, 
                 'length': 0}
                
@@ -336,7 +336,7 @@ class transmitter():
             self.radio.transmit_packet(packet)
             
             
-            #sleep(0.5)
+            sleep(0.5)
                             
             # If queue is empty wait a little to see if new data comes in 
             if self.queue.empty():

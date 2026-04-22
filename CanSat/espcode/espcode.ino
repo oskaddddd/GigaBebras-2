@@ -16,7 +16,8 @@
 
 
 //PROTOCOL CONFIG
-#define HEADER_ID 0xf24f
+#define GROUND_HEADER_ID 0xf24f
+#define CAN_HEADER_ID 0x350a
 #define DEBUG_ID 0xef
 #define DATA_ID 0x24
 #define RESEND_ID 0x2c
@@ -61,17 +62,18 @@ uint8_t packet_state = SYNC;
 #pragma pack(push, 1) 
 //struct for the packet header
 struct packet_header {
-  uint16_t header_id = htons(HEADER_ID); 
-  uint8_t id {};         
-  uint8_t length {};
+    uint16_t header_id = htons(CAN_HEADER_ID); 
+    uint8_t id {};         
+    uint8_t length {};
 };
 
 struct debug_payload {
-  uint32_t gps[2] {};              // 8 bytes | 4 bytes * 2
-  uint16_t height {};              // 2 bytes | 2 bytes * 1
-  int16_t velocity {};             // 2 bytes | 2 bytes * 1
-  int16_t temperature = 2000;          // 2 bytes | 2 bytes * 1
-  uint32_t pressure;          // 1 bytes | 1 bytes * 1
+    uint32_t timestamp {};
+    uint32_t gps[2] {};              // 8 bytes | 4 bytes * 2
+    uint16_t height {};              // 2 bytes | 2 bytes * 1
+    int16_t velocity {};             // 2 bytes | 2 bytes * 1
+    int16_t temperature = 2000;          // 2 bytes | 2 bytes * 1
+    uint32_t pressure;          // 1 bytes | 1 bytes * 1
 };
 
 struct debug_packet_struct {
@@ -125,12 +127,13 @@ uint8_t bitmapBuffer[(MAX_PACKETS + 7) / 8];  // 125 bytes
 uint8_t header_length = sizeof(packet_header);
 uint8_t MAX_RESEND_COUNT = (MAX_PACKET_SIZE - header_length)/2;
 
-
+QueueHandle_t resend_queue; 
+SemaphoreHandle_t radioMutex;
 
 uint8_t transmit_buffer[MAX_PACKET_SIZE];
 
 // Queue to hold packet IDs (uint16_t)
-//QueueHandle_t resendQueue; 
+//QueueHandle_t resend_queue; 
 
 // Class vibe coded, dont know what happening inside
 class CircularBuffer {
@@ -138,7 +141,7 @@ private:
     uint8_t buffer[MAX_PACKET_SIZE*2];  // Size as needed
     int head = 0;
     int tail = 0;
-    static const int capacity = MAX_PACKET_SIZE+10;
+    static const int capacity = MAX_PACKET_SIZE*2;
 
     int index(int i) const { return (tail + i) % capacity; }
 
@@ -244,6 +247,10 @@ void setup() {
       return;
     }
 
+    //Alocate the resend queue
+    resend_queue = xQueueCreate(MAX_RESEND_COUNT, sizeof(uint16_t));
+    radioMutex = xSemaphoreCreateMutex();
+
     // Initialize packet tracker
     if (!PacketTracker_Init(&tracker, MAX_PACKETS)) {
         Serial.println("BITMAP INIT FAILED!");
@@ -252,6 +259,7 @@ void setup() {
 
     resend_packet.header.id = RESEND_ID;
     debug_packet.header.id = DEBUG_ID;
+    debug_packet.header.length = sizeof(debug_packet)+CHECKSUM_LENGTH;
 
     Wire.begin();
     delay(500);
@@ -273,6 +281,17 @@ void setup() {
 
     //Set the network ID to receive
     //setNetID(net_ids[1]);
+
+    xTaskCreatePinnedToCore (
+        read_packets,     // Function to implement the task
+        "receiver",   // Name of the task
+        1000,      // Stack size in bytes
+        NULL,      // Task input parameter
+        0,         // Priority of the task
+        NULL,      // Task handle.
+        0          // Core where the task should run
+    );
+
 }
 
 
@@ -350,7 +369,7 @@ void read_sensors(){
 }
 
 
-//PACKET TRACKER FUNCTION
+//PACKET TRACKER FUNCTIONS
 bool PacketTracker_Init(PacketTracker* tracker, uint16_t n) {
     if (!tracker || n == 0) return false;
 
@@ -441,18 +460,13 @@ bool request_resend(){
 
 }
 
-void debug()
-{
-
-}
-
 uint8_t temp[MAX_PACKET_SIZE];
 
 
-void read_packets() {
-
+void read_packets(void *parameters) {
+    
     //Bytes parsed tracker
-    uint8_t i = 0;
+    uint8_t bytes_parsed = 0;
 
     //timeout tracker
     unsigned long t1 = millis();
@@ -488,9 +502,10 @@ void read_packets() {
             
 
             if ((millis() - t1) >= RESEND_TIMEOUT && is_first_packet == false){
-                //request_resend();
+                t1 = millis();
+                request_resend();
             }
-            delay(0.001);
+            vTaskDelay(0.001);
         }
 
 
@@ -503,12 +518,10 @@ void read_packets() {
 
 
                 uint16_t possibleHeader = (receive_buffer[0] << 8) | receive_buffer[1];
-                i = 2;
+                bytes_parsed = 2;
 
-                if (possibleHeader == HEADER_ID) {
+                if (possibleHeader == GROUND_HEADER_ID) {
                     Serial.println("Started parsing packet");
-                    data_packet.header.header_id = possibleHeader;
-
                     packet_state = READ_HEADER;
                 }
                 else{
@@ -530,65 +543,49 @@ void read_packets() {
                 if (receive_buffer.available() < header_length) {continue;}
 
                 Serial.println("Started parsing Header");
-                data_packet.header.id = receive_buffer[i++];
-                data_packet.header.length = receive_buffer[i++];
+                data_packet.header.id = receive_buffer[bytes_parsed++];
+                data_packet.header.length = receive_buffer[bytes_parsed++];
 
                 // sanity check
                 if (data_packet.header.length > MAX_PACKET_SIZE) {
 
+                    Serial.print("Packet too long");
                     packet_state = SYNC;
                     receive_buffer.pop();
                     break;
                 }
 
-                packet_state = READ_PAYLOAD;
-                break;
-            }
-
-            case READ_PAYLOAD: {
-
-                // Wait for enough data (excluding checksum)
-                if (receive_buffer.available() < data_packet.header.length-CHECKSUM_LENGTH) {continue;}
-                Serial.println("Started parsing Payload");
-
-                switch (data_packet.header.id){
-                    case DATA_ID:{
-                        // Parse payload
-                        packets_seen += 1;
-                        data_packet.payload.packet_count = (receive_buffer[i+1] << 8) | receive_buffer[i];
-                        i+=2;
-                        data_packet.payload.packet_i = (receive_buffer[i+1] << 8) | receive_buffer[i];
-                        i+=2;
-
-                    }
-                    
-                    case RESEND_ID:{
-
-                        // Read the resend contents
-                        //resend_packet.buffer
-
-                        break;
-                        
-                    }
-                }
-                
                 packet_state = READ_CHECKSUM;
                 break;
-            
             }
 
             case READ_CHECKSUM: {
                 // Wait for enough data
                 if (receive_buffer.available() < data_packet.header.length) {continue;}
 
-                Serial.print("Started parsing CHECKSUM, packet_i:");
-                Serial.print(data_packet.payload.packet_i);
+                Serial.println("Started parsing CHECKSUM");
+
+                if (data_packet.header.id == DATA_ID){
+                    // Parse payload
+                    packets_seen += 1;
+                    data_packet.payload.packet_count = (receive_buffer[bytes_parsed+1] << 8) | receive_buffer[bytes_parsed];
+                    bytes_parsed+=2;
+                    data_packet.payload.packet_i = (receive_buffer[bytes_parsed+1] << 8) | receive_buffer[bytes_parsed];
+                    bytes_parsed+=2;
+
+                    Serial.print("packet_i:");
+                    Serial.print(data_packet.payload.packet_i);
+                    
+
+                }
+
                 Serial.print(" packet_length:");
                 Serial.println(data_packet.header.length);
 
+                //Read data into the temp buffer
                 receive_buffer.read(temp, data_packet.header.length);
 
-                // I hate endians :))
+                // I hate endians :)) (Don't touch, it works)
                 uint16_t stored_checksum = (temp[data_packet.header.length - 1] << 8) | temp[data_packet.header.length - 2];
                 uint16_t calc_checksum = calculate_checksum(temp, data_packet.header.length-2);
 
@@ -597,52 +594,91 @@ void read_packets() {
                 Serial.print("calc:");
                 Serial.println(calc_checksum);
                 if (stored_checksum == calc_checksum){
-                    //Delete processed packet
-                    receive_buffer.del(data_packet.header.length);
-                    
                     Serial.println("CHECKSUM MATCH");
-                    //Init the tracker system which i totally understand... some bitmaps and shii
-                    if (is_first_packet){
-                        is_first_packet = false;
-                        
-                        //Set the finishing packet to be the last index
-                        last_packet_i = data_packet.payload.packet_count-1;
-                        packet_count = data_packet.payload.packet_count;
-                        packets_seen_target = packet_count;
 
-                        if (!PacketTracker_Init(&tracker, data_packet.payload.packet_count)) {
-                            Serial.println("Failed to alocate tracker buffer");
-                            return; // Allocation failed
+                    switch (data_packet.header.id){
+                        case DATA_ID:{
+                            //Delete processed packet
+                            receive_buffer.del(data_packet.header.length);
+
+                            //Init the tracker system which i totally understand... some bitmaps and shii
+                            if (is_first_packet){
+                                is_first_packet = false;
+
+                                //Set the finishing packet to be the last index
+                                last_packet_i = data_packet.payload.packet_count-1;
+                                packet_count = data_packet.payload.packet_count;
+                                packets_seen_target = packet_count;
+                            
+                                if (!PacketTracker_Init(&tracker, data_packet.payload.packet_count)) {
+                                    Serial.println("Failed to alocate tracker buffer");
+                                    return; // Allocation failed
+                                }
+                            }
+                            // Mark packet as received
+                            PacketTracker_SetReceived(&tracker, data_packet.payload.packet_i);
+
+                            //Change the header id
+                            uint16_t new_header_id = htons(CAN_HEADER_ID);
+                            memcpy(temp, &new_header_id, 2);
+
+                            //Calculate and set the new checksum
+                            uint16_t new_checksum = htons(calculate_checksum(temp, data_packet.header.length-2));
+                            memcpy(temp, &new_checksum, 2);
+
+                            //Store packet
+                            memcpy(&storage_buffer[MAX_PACKET_SIZE*data_packet.payload.packet_i],
+                                temp,
+                                data_packet.header.length);
+                            
+                            Serial.write(temp, data_packet.header.length);
+                            Serial.println("\n Finished parsing packet");
+
+                            if (is_first_packet == false && (data_packet.payload.packet_i == last_packet_i || packets_seen == packets_seen_target)){
+                                Serial.println("Read final packet");
+                                packets_seen = 0;
+                                //if no more packets need to be resent - start transmitting
+                                if (!request_resend()){
+                                    can_state = TRANSMIT;
+                                }
+                            }
+                    
+                
+                            break;
+
+                        }
+
+                        case RESEND_ID:{
+
+                            uint8_t resned_count = (data_packet.header.length - header_length) / 2;
+                            uint16_t resend_packet_i;
+                            
+                            Serial.print("Putting packets into resend queue");
+                            for (int i = 0; i < resned_count; i++){
+                                //Read the resend packet index
+                                resend_packet_i = (temp[header_length + 2] << 8) | temp[header_length + 1];
+                                Serial.print('[');
+                                Serial.print(resend_packet_i);
+                                Serial.print('] ');
+                                if (xQueueSend(resend_queue, &resend_packet_i, portMAX_DELAY) != pdTRUE) {
+                                    Serial.println("Queue full :(");
+                                }
+
+                            }
+
+                            break;
+
                         }
                     }
-                    // Mark packet as received
-                    PacketTracker_SetReceived(&tracker, data_packet.payload.packet_i);
                     
-                    //Store packet
-                    memcpy(&storage_buffer[MAX_PACKET_SIZE*data_packet.payload.packet_i],
-                        temp,
-                        data_packet.header.length);
-                    
-                    Serial.write(temp, data_packet.header.length);
-                    Serial.println("\n Finished parsing packet");
 
                 }
                 else{
                     receive_buffer.pop();
                 }
                 packet_state = SYNC;
-                i = 0;
+                bytes_parsed = 0;
 
-                if (is_first_packet == false && (data_packet.payload.packet_i == last_packet_i || packets_seen == packets_seen_target)){
-                    Serial.println("Read final packet");
-                    packets_seen = 0;
-                    //if no more packets need to be resent - start transmitting
-                    if (!request_resend()){
-                        can_state = TRANSMIT;
-                        return;
-                    }
-                    
-                }
             }   
             
 
@@ -658,50 +694,67 @@ void send_packet(uint8_t length){
 }
 
 
-void transmit_packets()
-{
-    unsigned long t0 = millis();
-    for (int i = 0; i < packet_count; i++){
-
-        if (millis() - t0 > DEBUG_DELAY){
-            debug();
-            t0 = millis();
-        }
-
-        //Get packet length
-        uint8_t packet_length = storage_buffer[i*MAX_PACKET_SIZE+length_byte_offset];
-
-        //Copy to transmit buffer
-        memcpy(transmit_buffer, storage_buffer+(i*MAX_PACKET_SIZE), packet_length);
-
-        //Transmit packet
-        send_packet(packet_length);
+unsigned long debug_timer = millis();
+// A non looping function which can be called to check it is time to debug and if so debug
+void debug(){
+    uint32_t timestamp = millis();
+    if (timestamp - debug_timer > DEBUG_DELAY){
+            read_sensors();
+            //Update the timestamp in the debug packet
+            debug_packet.payload.timestamp = timestamp;
+            memcpy(transmit_buffer, &debug_packet, debug_packet.header.length-2);
+            uint16_t checksum = calculate_checksum(transmit_buffer, debug_packet.header.length-2);
+            memcpy(transmit_buffer + (debug_packet.header.length - 2), &checksum, CHECKSUM_LENGTH);
+            send_packet(debug_packet.header.length);
+            debug_timer = timestamp;
     }
-//    for (size_t i = 0; i < count; i++) {
-//        // 1. Calculate pointer to the start of the current uint16_t
-//        uint8_t* ptr = storage_buffer + (i * 2);
-//
-//        // 2. Cast the pointer to uint16_t* and read the value
-//        uint16_t value = *((uint16_t*)ptr);
-//
-//    }
-
-
-
 }
 
 
-void loop() {
+void transmit_data_packet(uint16_t i){
+    //Get packet length
+    uint8_t packet_length = storage_buffer[i*MAX_PACKET_SIZE+length_byte_offset];
+
+    //Copy to transmit buffer
+    memcpy(transmit_buffer, storage_buffer+(i*MAX_PACKET_SIZE), packet_length);
+
+    //Transmit packet
+    send_packet(packet_length);
+}
+
+void transmit_loop()
+{
     
-    read_packets();
-    return;
+    for (uint16_t i = 0; i < packet_count; i++){
+        transmit_data_packet(i);
+        debug();
+        
+    }
+    can_state = RESEND;
+}
+
+void resend_loop(){
+    uint16_t retransmit_i;
+    while (true){
+        if (xQueueReceive(resend_queue, &retransmit_i, 0) == pdTRUE) {
+            transmit_data_packet(retransmit_i);
+        }   
+        debug();
+    }
+
+}
+
+void loop() {
     switch (can_state){
         case RECEIVE:
-            read_packets();
+            debug();
             break;
         case TRANSMIT:
-            transmit_packets();
+            transmit_loop();
             break;
+        case RESEND:
+            resend_loop();
+
 
     }
 }
