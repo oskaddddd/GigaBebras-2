@@ -215,10 +215,13 @@ BME280::TempUnit tempUnit = BME280::TempUnit_Celsius;
 BME280::PresUnit presUnit = BME280::PresUnit_Pa;
 
 //gps
+#include <TinyGPSPlus.h>
+TinyGPSPlus gps;
+
 
 //Define serials
 HardwareSerial& radio = Serial2;
-HardwareSerial& gps   = Serial1;
+HardwareSerial& gps_serial   = Serial1;
 
 
 //OTHER VARIABLES
@@ -272,15 +275,15 @@ void setup() {
 
     radio.begin(57600, SERIAL_8N1);
 
-    //gps.begin(115200, SERIAL_8N1, gps_rx, -1);
+    gps.begin(115200, SERIAL_8N1, gps_rx, -1);
 
     //Initialize BME
-    //bme.begin();
+    bme.begin();
 
     delay(1000);
 
     //Set the network ID to receive
-    //setNetID(net_ids[1]);
+    setNetID(net_ids[0]);
 
     xTaskCreatePinnedToCore (
         read_packets,     // Function to implement the task
@@ -364,7 +367,16 @@ void read_sensors(){
   bme.read(pres, temp, hum, tempUnit, presUnit);
 
   debug_packet.payload.temperature = temp*100;
-  debug_packet.payload.pressure = temp*100;
+  debug_packet.payload.pressure = pres*100;
+
+  if (gps.location.isValid())
+  {  
+    debug_packet.payload.gps[0] = gps.location.lng() * pow(10, 6);
+    debug_packet.payload.gps[1] = gps.location.lat() * pow(10, 6);
+    data.height = gps.altitude.isValid() ? gps.altitude.meters() : 0;
+    
+    data.velocity = gps.speed.isValid() ? gps.speed.mps()*100 : 0;
+  }
 
 }
 
@@ -697,6 +709,10 @@ void send_packet(uint8_t length){
 unsigned long debug_timer = millis();
 // A non looping function which can be called to check it is time to debug and if so debug
 void debug(){
+    
+    for(int i = 0; i < gps_serial.available(); i++){
+      gps.encode(Serial.read());
+    }
     uint32_t timestamp = millis();
     if (timestamp - debug_timer > DEBUG_DELAY){
             read_sensors();

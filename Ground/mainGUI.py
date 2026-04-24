@@ -19,6 +19,8 @@ import logging
 import time
 import json 
 
+import ground_station as gs
+
 from math import tan
 
 
@@ -34,38 +36,27 @@ canID = 0xff
 
 fullID = bytes([byte for byte in startBytes]+[canID])
 
-DataManager = dataAPI.DataMain(startBytes, canID)
+TRANSMIT = 0
+RECEIVE = 1
+mode = TRANSMIT
 
+settings = {}
 
-#Read the gradient data from json
-gradient_data = []
-with open("./GroundMain/assets/gradient.json", 'r') as f:
-    gradient_data = json.load(f)
+with open('Ground/Assets/settings.json', 'r') as f:
+    settings = json.load(f)
+    
     
 #print("Hello")
 
 
-class pollutionLegendWidget(pg.GraphicsLayoutWidget):
-    def __init__(self, parent = None):
-        super().__init__(parent)
-        self.color_bar = pg.ColorBarItem(
-            values=(0, 69), 
-            interactive=False,
-            label="ppm"
-        )
-
-        self.addItem(self.color_bar)
-    
-    def updateLegend(self, maxVal, cmap:pg.colormap):
-        self.color_bar.values =(0, maxVal)
-        self.color_bar.setColorMap(cmap)
-        self.color_bar.interactive=False
-        
 
         
 
         
 
+        
+debug_manager = None
+ground_station = None
     
 #2D plot widget
 class dataPlotWidget(PlotWidget):
@@ -87,11 +78,8 @@ class dataPlotWidget(PlotWidget):
         #self.marker.__init__()
     def setAxis(self, dataName, axis = "left"):
         table = {"height": "m",
-                 "pollution": "ppm",
                  "wind": "m/s",
                  "velocity": "m/s",
-                 "magneticField":"mT",
-                 "acceleration":"G",
                  "humidity":"%",
                  "temprature":"°C",
                  "pressure":"Pa"}
@@ -110,23 +98,23 @@ class SliderManager():
     def __init__(self, slider:timeSlider):
         self.time = 0
         self.timeRange = 0
-        if len(DataManager.DataBase) != 0:
-            self.time = DataManager.DataBase[0]["timestamp"]
-            self.timeRange = DataManager.DataBase[0]["timestamp"] - DataManager.DataBase[-1]["timestamp"]
+        if len(debug_manager.debug_data) != 0:
+            self.time = debug_manager.debug_data[0]["timestamp"]
+            self.timeRange = debug_manager.debug_data[0]["timestamp"] - debug_manager.debug_data[-1]["timestamp"]
         
         self.index = 0
         self.slider = slider
         self.slider.valueChanged.connect(self.updateSliderVal)
-        self.slider.setMaximum(len(DataManager.DataBase))
+        self.slider.setMaximum(len(debug_manager.debug_data))
     #Called to update the slide object, when new data is recieved and timestamp range expands
     def updateTimerange(self):
-        if not len(DataManager.DataBase):
+        if not len(debug_manager.debug_data):
             logging.debug("Not updating time range, len(DataBase) = 0")
             return
         
         #Function to handle if slider is at a maximum
         def doMaximum():
-            self.time = DataManager.DataBase[0]["timestamp"]
+            self.time = debug_manager.debug_data[0]["timestamp"]
             self.slider.blockSignals(True)
             self.slider.setValue(self.slider.maximum())
             self.slider.blockSignals(False)
@@ -134,7 +122,7 @@ class SliderManager():
         
         logging.debug("Updating time range")
         #Calculate the timerange
-        self.timeRange = DataManager.DataBase[0]["timestamp"] - DataManager.DataBase[len(DataManager.DataBase)-1]["timestamp"]
+        self.timeRange = debug_manager.debug_data[0]["timestamp"] - debug_manager.debug_data[len(debug_manager.debug_data)-1]["timestamp"]
         
         maximum = False
         #Check if slider is at the maximum and store it
@@ -142,8 +130,8 @@ class SliderManager():
             maximum = True
         
         #Extend the slider range to match the amount of data, with a max of 1000
-        if len(DataManager.DataBase) < 1000:
-            self.slider.setMaximum(len(DataManager.DataBase))
+        if len(debug_manager.debug_data) < 1000:
+            self.slider.setMaximum(len(debug_manager.debug_data))
             
             if maximum:
                 doMaximum()
@@ -163,10 +151,10 @@ class SliderManager():
                 self.slider.setValue(self.slider.maximum())
             #Calculate and set the value of the slider
             else:
-                self.slider.setValue(round((self.time-DataManager.DataBase[-1]["timestamp"])/self.timeRange*self.slider.maximum()))
+                self.slider.setValue(round((self.time-debug_manager.debug_data[-1]["timestamp"])/self.timeRange*self.slider.maximum()))
             self.slider.blockSignals(False)
         
-        #DataManager.DataBase.bisect_left({"timestamp":100})
+        #debug_manager.debug_data.bisect_left({"timestamp":100})
     
         
     #Called when the slider value is changed
@@ -174,11 +162,11 @@ class SliderManager():
         if self.timeRange == 0:
             return
         
-        expectedTime = (self.timeRange*value/self.slider.maximum()) + DataManager.DataBase[-1]["timestamp"]
-        self.index = DataManager.DataBase.bisect_left({"timestamp":expectedTime })
+        expectedTime = (self.timeRange*value/self.slider.maximum()) + debug_manager.debug_data[-1]["timestamp"]
+        self.index = debug_manager.debug_data.bisect_left({"timestamp":expectedTime })
         
-        self.time = DataManager.DataBase[self.index]["timestamp"]
-        logging.debug(f"ratio:{value/self.slider.maximum()}\n-timerange:{self.timeRange}\n-expectedTime:{expectedTime}\n-TIME:{self.time}\n-Index:{self.index}\n-RangeLen:{len(DataManager.DataBase)}")
+        self.time = debug_manager.debug_data[self.index]["timestamp"]
+        logging.debug(f"ratio:{value/self.slider.maximum()}\n-timerange:{self.timeRange}\n-expectedTime:{expectedTime}\n-TIME:{self.time}\n-Index:{self.index}\n-RangeLen:{len(debug_manager.debug_data)}")
         self.slider.timeUpdated.emit(self.index)
         
     
@@ -188,6 +176,9 @@ class SliderManager():
 #3D plot widget for GPS
 class gpsWidget(gl.GLViewWidget):
     def __init__(self, *args, devicePixelRatio=None, **kwargs):
+        global debug_manager
+        global ground_station
+        
         super().__init__(*args, devicePixelRatio=devicePixelRatio, **kwargs)
         grid = gl.GLGridItem()
         grid.setSize(800, 800)
@@ -209,60 +200,7 @@ class gpsWidget(gl.GLViewWidget):
         self.makeCurrent()
         super().paintGL()
         
-
     
-     
-#Class responsible for parsing packets   
-class SerialMonitor(QThread):
-    update_signal = pyqtSignal(str)
-    
-    def __init__(self):
-        super().__init__()
-
-        self.running = True
-        self.pollingRate = 30 #hertz
-    
-    
-    def run(self):
-        #Setup serial
-
-        self.coms = dataAPI.SerialSetup("ttyUSB0")
-
-        
-        #Serial loop
-        while self.running:
-            #If data iavailable
-            if self.coms.in_waiting > 0:
-                
-                #Read until the startbytes of a new packet are reached
-                packet = self.coms.read_until(fullID)
-
-                #Check if /r/n (endbytes) are before the start bytes
-                if packet[(len(packet)-len(fullID)-2):(len(packet)-len(fullID))] != b'\r\n':
-                    logging.warning("\\r\\n not before start bytes", packet[(len(packet)-len(fullID)-2):(len(packet)-len(fullID))])
-                    continue
-                
-                #Remove the startbytes from the end of the packet and since they were lost from the beggining of the packet, add them back
-                #(startbytes + packet - startbytes)
-                packet = fullID + packet[:(len(packet)-len(fullID))]
-                
-                #Debug the packet to the terminal
-                #for i, byte  in enumerate(packet):
-                #    logging.debug(i, f"\\x{hex(byte)}")
-                
-                #Parse the packet
-                #Get the type of packet ('data', 'debug')
-                pType = DataManager.parse_packet(packet)
-                
-                #If PacketType is valid, send it back
-                if pType:
-                    self.update_signal.emit(pType)
-                    
-                    
-                    
-                
-            
-            time.sleep(1/self.pollingRate)
     
 class one_second_loop(QThread):
     signal = pyqtSignal()
@@ -275,23 +213,32 @@ class one_second_loop(QThread):
             
     
 class MainWindow(QMainWindow):
+    global settings
+    global mode
     def __init__(self):
         #Init the UI
         super(MainWindow, self).__init__()
-        self.ui = uic.loadUi('GroundMain/assets/UI.ui', self)
+        self.ui = uic.loadUi('Ground/Assets/UI.ui', self)
         
+        while True:
+            time.sleep(1)
         #Get the start time of the code to display packets/second graph 
         self.startTime = round(time.time())
         #Arrays for staring data for amount of packets recieved per second
         self.debugPlotData = [0]
         #self.debugPlotDebug = [0]
         self.pens = [pg.mkPen(color = "w"), pg.mkPen(color = 'r'), pg.mkPen(color = 'b')]
+                
+        ground_station = None
         
-        self.pollution_cmap = pg.ColorMap([0, 0.4,  1], [(0, 255, 0), (255, 255, 0), (255, 0, 0)])
+        if mode == TRANSMIT:
+            ground_station = gs.transmitter(settings['trans_path'])
+        else:
+            ground_station = gs.transmitter(settings['rec_path'])
+            
+        debug_manager = ground_station.debug_manager
         
-        #Initialise the serialMonitor Class responsible for managing incoming data
-        self.serial = SerialMonitor()
-        self.serial.update_signal.connect(self.updateData)
+        
         
         #Connect the data selection dropdown to a function responsible for changing the data on the graph
         self.ui.dataDropdown.currentTextChanged.connect(self.dataDropboxChenged)
@@ -301,29 +248,24 @@ class MainWindow(QMainWindow):
         self.ui.debugPlot.setLabel("left", "packets")
         
         self.valid_gps_index = 2
-        for i in range(1, len(DataManager.DataBase)):
-            if DataManager.DataBase[-i]["gps"][0] != 0:
+        for i in range(1, len(debug_manager.debug_data)):
+            if debug_manager.debug_data[-i]["gps"][0] != 0:
                 self.valid_gps_index = max(i, 2)
                 break
         
         self.sliderManager = SliderManager(self.ui.timeSlider)
         
-        
-    
- 
         #A list of all the timestamps recieved from the CanSat for the X axis of graphs 
         #(not related to starttime. Startime is local time, while timeline is as reported by cansat)
         self.timeline = np.array([])
-        
+
         #If data was not cleared, display it
-        if len(DataManager.dictData) != 0:
-            self.updateData("data")
-            self.updateData("debug")
+        if len(debug_manager.debug_dict) != 0:
+            self.updateData()
+
         
         self.ui.timeSlider.timeUpdated.connect(self.updateGraphMarkers)
-        
-        #Start listening for packets
-        self.serial.start()
+
         
         self.one_second_loop = one_second_loop()
         self.one_second_loop.signal.connect(self.updateDebugPlot)
@@ -331,12 +273,12 @@ class MainWindow(QMainWindow):
         
         
     def updateGraphMarkers(self, index):
-        dot = DataManager.DataBase[index]
+        dot = debug_manager.debug_data[index]
         if dot["gps"][0] != 0:
             gpsDot = np.array([[*dot["gps"], dot["height"]]], dtype=np.float32)
         else:
-            gpsDot = np.array([[*DataManager.DataBase[-self.valid_gps_index]["gps"], DataManager.DataBase[-self.valid_gps_index]["height"]]], dtype=np.float32)
-        gpsDot[0]-=np.array([*DataManager.DataBase[0]["gps"], DataManager.DataBase[0]["height"]])
+            gpsDot = np.array([[*debug_manager.debug_data[-self.valid_gps_index]["gps"], debug_manager.debug_data[-self.valid_gps_index]["height"]]], dtype=np.float32)
+        gpsDot[0]-=np.array([*debug_manager.debug_data[0]["gps"], debug_manager.debug_data[0]["height"]])
         gpsDot[0, :2] /= 100
         gpsDot[0, 2] /= 10
         #print(gpsDot)
@@ -352,19 +294,7 @@ class MainWindow(QMainWindow):
         
         #Extract gps and height data into a np array
         
-        gps = DataManager.extraxtData("gps", np.float32)
-        
-        
-        #Calculate polluton colors
-        pollution = DataManager.extraxtData("pollution", np.float32)[:-self.valid_gps_index+1]
-        maxPollutionVal = 1
-        if len(pollution) != 0:
-            maxPollutionVal = pollution.max()
-
-        colors = self.pollution_cmap.map(pollution/maxPollutionVal)/255
-        print(colors)
-        self.ui.pollutionLegend.updateLegend(maxPollutionVal, self.pollution_cmap)
-
+        gps = debug_manager.extraxtData("gps", np.float32)
         
         
         
@@ -374,7 +304,7 @@ class MainWindow(QMainWindow):
             self.valid_gps_index = max(len(gps)-1, 2)
             return
         
-        height = DataManager.extraxtData("height", np.float32)
+        height = debug_manager.extraxtData("height", np.float32)
         
         result = np.column_stack((gps[:-self.valid_gps_index+1], height[:-self.valid_gps_index+1]))
         
@@ -394,7 +324,7 @@ class MainWindow(QMainWindow):
             result[:, 2] /= 10
 
             #Plot the data
-            self.ui.locationPlot.plot.setData(pos = result, color = colors, width = 4.0)
+            self.ui.locationPlot.plot.setData(pos = result, width = 4.0)
             
         #Calculate wind 
         arrowLength = 10
@@ -421,55 +351,53 @@ class MainWindow(QMainWindow):
         #Expand {packets per second} arrays, till their lentgh is equal to program runtime in seconds
         while len(self.debugPlotData) < tStamp+1:
             self.debugPlotData.append(0)
-        #while len(self.debugPlotDebug) < tStamp+1:
-        #    self.debugPlotDebug.append(0)
+
         self.debugPlotData[tStamp] += newPackets
         
         self.ui.debugPlot.curve.setData(x = list(range(tStamp+1)), y = self.debugPlotData)
         
+    
     #Handles ploting when new data is recieved      
-    def updateData(self, pType):
+    def updateData(self):
         print(self.valid_gps_index)
         self.sliderManager.updateTimerange()
         self.updateDebugPlot(1)
         
         #Update the gps plot
                 
-        match pType:
-            
-            #Eecieved a data packet
-            case "data":
-                self.timeline = DataManager.extraxtData("timestamp")[:]/1000
+ 
+
+        self.timeline = debug_manager.extraxtData("timestamp")[:]/1000
                 
                 
-                match self.dataType:
-                    case "acceleration" | "magneticField" | "angVelocity":
-                        #dat = DataManager.extraxtData(self.dataType, np.float32)
-                        #magnitudes = np.linalg.norm(dat, axis=1)
-                        #print("dat", dat, "\nmag:", magnitudes)
-                        self.ui.dataPlot.curve.setData(\
-                            x = self.timeline,\
-                            y = np.linalg.norm(DataManager.extraxtData(self.dataType, np.float32), axis=1)\
-                        )
+        match self.dataType:
+            case "acceleration" | "magneticField" | "angVelocity":
+                #dat = DataManager.extraxtData(self.dataType, np.float32)
+                #magnitudes = np.linalg.norm(dat, axis=1)
+                #print("dat", dat, "\nmag:", magnitudes)
+                self.ui.dataPlot.curve.setData(\
+                    x = self.timeline,\
+                    y = np.linalg.norm(debug_manager.extraxtData(self.dataType, np.float32), axis=1)\
+                )
 
-                    case "wind":
-                        gpsData = DataManager.extraxtData("gps", np.float32)
-                        print(gpsData[:-self.valid_gps_index].shape, gpsData[:-self.valid_gps_index+1].shape)
-                        deltaTimes = self.timeline[self.valid_gps_index:]+self.timeline[self.valid_gps_index-1:-1]
-
-                        gpsDifference = gpsData[0:-self.valid_gps_index] - gpsData[1:-self.valid_gps_index+1]
-
-                        print(gpsDifference)
-                        self.ui.dataPlot.curve.setData(\
-                            x = self.timeline[:-self.valid_gps_index],\
-                            y = (np.linalg.norm(gpsDifference, axis=1)*0.11)/deltaTimes\
-                        )
-
-                    case _:
-                        self.ui.dataPlot.curve.setData(\
-                            x = self.timeline, \
-                            y = DataManager.extraxtData(self.dataType, np.float32)\
-                        )
+            case "wind":
+                gpsData = debug_manager.extraxtData("gps", np.float32)
+                print(gpsData[:-self.valid_gps_index].shape, gpsData[:-self.valid_gps_index+1].shape)
+                
+                deltaTimes = self.timeline[self.valid_gps_index:]+self.timeline[self.valid_gps_index-1:-1]
+                gpsDifference = gpsData[0:-self.valid_gps_index] - gpsData[1:-self.valid_gps_index+1]
+                print(gpsDifference)
+                
+                self.ui.dataPlot.curve.setData(\
+                    x = self.timeline[:-self.valid_gps_index],\
+                    y = (np.linalg.norm(gpsDifference, axis=1)*0.11)/deltaTimes\
+                )
+                
+            case _:
+                self.ui.dataPlot.curve.setData(\
+                    x = self.timeline, \
+                    y = debug_manager.extraxtData(self.dataType, np.float32)\
+                )
 
                 
                 
@@ -477,25 +405,6 @@ class MainWindow(QMainWindow):
     
     
                 #Clear the data plot and draw a new graph with the updated data
-                
-                
-                
-            
-            #Recieved a debug packet 
-            case "debug":
-                ##Add 1, to count of debug packets recieved this second
-                #self.debugPlotDebug[tStamp] += 1
-            
-                #Set all the sensor checkboxes to their status
-                self.ui.ramLabel.setText(f"RAM: {round((1-(DataManager.debug_container[0]['memUsage']/2048))*100)}%")
-                self.ui.vccLabel.setText(f"VCC: {DataManager.debug_container[0]['baterryVoltage']}")
-                loss = (1 - (DataManager.packetCount / DataManager.debug_container[0]['packetCount'])) * 100
-                self.ui.lossLabel.setText(f"LOSS: {loss:.2f}%")
-                self.ui.gyCheckbox.setChecked(DataManager.debug_container[0]["gy"])
-                self.ui.dhtCheckbox.setChecked( DataManager.debug_container[0]["dht"])
-                self.ui.gpsCheckbox.setChecked( DataManager.debug_container[0]["gps"])
-                self.ui.sdCheckbox.setChecked(DataManager.debug_container[0]["sd"])
-                self.ui.mqCheckbox.setChecked(DataManager.debug_container[0]["mq"])
                 
         self.updateGpsPlot()
 
@@ -509,20 +418,88 @@ class MainWindow(QMainWindow):
     def dataDropboxChenged(self, text):
         self.dataType = text
         self.ui.dataPlot.setAxis(self.dataType)
-        self.updateData("data")
+        self.updateData()
 
         self.ui.dataPlot.centerOn(self.ui.dataPlot.curve)
         self.ui.dataPlot.plotItem.enableAutoRange('xy', True)
         self.ui.dataPlot.plotItem.autoRange()
         
+class StartupDialog(QDialog):
+    global settings
+    global settings
+    def __init__(self):
+        global settings
+        #Init the UI
+        super(StartupDialog, self).__init__()
+        self.ui = uic.loadUi('Ground/Assets/dialog.ui', self)
+        
+        # Connect both buttons to the same slot
+        self.trans_button.toggled.connect(self.handle_toggle)
+        self.rec_button.toggled.connect(self.handle_toggle)
+        
+        self.file_button.clicked.connect(self.handle_browse)
+        
+        self.buttonBox.accepted.connect(self.finish)
+        self.buttonBox.rejected.connect(exit)
+        
+        self.path_input.setText('/select transmitter or receiver')
+        
+    def finish(self):
+        
+        if mode != None:
+            with open('Ground/Assets/settings.json', 'w') as f:
+                json.dump(settings, f)
+                
+            
+    def handle_toggle(self, checked):
+        # Determine which sender triggered the signal
+        sender = self.sender()
+        self.path_input.setEnabled(True)
+        self.file_button.setEnabled(True)
+        
+        if checked:
+            if sender == self.trans_button:
+                self.rec_button.setChecked(False) # Untoggle the other button
+                mode = TRANSMIT
+                self.path_input.setText(settings['trans_path'])
+            elif sender == self.rec_button:
+                self.trans_button.setChecked(False) # Untoggle the other button
+                mode = RECEIVE
+                self.path_input.setText(settings['rec_path'])
+
+            print(f"Mode changed to: {mode}")
+    
+    def handle_browse(self):
+        # Check which mode is active and open the appropriate dialog
+        if self.trans_button.isChecked():
+            # Open a dialog to select a file
+            file_path, _ = QFileDialog.getOpenFileName(self, "Select File to Transmit")
+            if file_path:
+                self.path_input.setText(file_path)
+                settings['trans_path'] = file_path
+
+        elif self.rec_button.isChecked():
+            # Open a dialog to select a directory
+            dir_path = QFileDialog.getExistingDirectory(self, "Select Receive Directory")
+            if dir_path:
+                self.path_input.setText(dir_path)
+                settings['rec_path'] = dir_path
+                
+
         
 
+
+    
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     qdarktheme.setup_theme()
-    
-    window = MainWindow()
-    window.show()
-    app.exec()
-    
+
+    dialog = StartupDialog()
+
+    # Use exec_() to block here until the dialog is accepted/
+    dialog.exec()
+    if dialog.accepted:
+        print(1)
+        window = MainWindow()
+        window.show()

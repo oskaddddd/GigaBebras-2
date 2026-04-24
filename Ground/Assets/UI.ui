@@ -21,6 +21,13 @@
     <item row="2" column="0">
      <layout class="QHBoxLayout" name="horizontalLayout_4">
       <item>
+       <widget class="QProgressBar" name="progressBar">
+        <property name="value">
+         <number>24</number>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="timeSlider" name="timeSlider">
         <property name="maximum">
          <number>1000</number>
@@ -31,16 +38,6 @@
     </item>
     <item row="0" column="0">
      <layout class="QHBoxLayout" name="horizontalLayout">
-      <item>
-       <widget class="pollutionLegendWidget" name="pollutionLegend" native="true">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-       </widget>
-      </item>
       <item>
        <layout class="QVBoxLayout" name="verticalLayout_2">
         <item>
@@ -119,7 +116,7 @@
      <x>0</x>
      <y>0</y>
      <width>797</width>
-     <height>20</height>
+     <height>21</height>
     </rect>
    </property>
   </widget>
@@ -142,12 +139,6 @@
    <class>timeSlider</class>
    <extends>QSlider</extends>
    <header>mainGUI</header>
-  </customwidget>
-  <customwidget>
-   <class>pollutionLegendWidget</class>
-   <extends>QWidget</extends>
-   <header>mainGUI</header>
-   <container>1</container>
   </customwidget>
  </customwidgets>
  <tabstops>

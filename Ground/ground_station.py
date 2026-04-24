@@ -15,18 +15,40 @@ from gradient import gradient
 
 import json
 
+import numpy as np
+from operator import itemgetter
+
 logging.getLogger().setLevel(logging.DEBUG)
 
-debug_dict = []
+
+class debug_manager():
+    def __init__(self):
+        self.debug_dict = []
 
 
-with open("data.json", 'r') as f:
-    debug_dict = json.load(f)
-    if len(debug_dict) != 0:
-        if input("There is data in data.json, clear to delete? y/n:") == 'y':
-            dictData = []
 
-debug_data = SortedList(debug_dict, key=lambda x: -x['timestamp'])
+        with open("./Ground/Assets/debug.json", 'r') as f:
+            self.debug_dict = json.load(f)
+            if len(self.debug_dict) != 0:
+                if input("There is data in debug.json, clear to delete? y/n:") == 'y':
+                    self.debug_dict = []
+
+        self.debug_data = SortedList(self.debug_dict, key=lambda x: -x['timestamp'])
+        
+    def store_debug_packet(self, payload):
+        self.debug_data.add(payload)
+        self.debug_dict.append(payload)
+        
+        #Dump data into json
+        with open('debug.json', 'r') as f:
+            json.dump(self.debug_dict, f, indent=4)
+        
+    def extraxtData(self, keyword:str, dtype:np.dtype = np.int32):
+        getter = itemgetter(keyword)
+        return np.array(list(map(getter, self.DataBase)), dtype=dtype)
+        
+        
+        
 
 class receiver():
     def __init__(self):
@@ -34,7 +56,7 @@ class receiver():
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
                 
-        self.debug_time_window = 0.1
+        self.debug_manager = debug_manager()
         
         self.detected_packets = 0
         
@@ -88,8 +110,6 @@ class receiver():
         length = self.header_length + C.CHECKSUM_SIZE
         
         count = min(len(self.received_packet_tracker), self.max_resend_count)
-        
-        
         
         
         # Pack the indexes of the packets that need resending
@@ -206,13 +226,11 @@ class receiver():
                 
                 
             case C.DEBUG_PACKET_ID:
+                self.debug_manager.store_debug_packet(packet['payload'])
+                
                 print("Debug packet:", packet)
         
-    def parse_data():
-        
-        pass        
-    def parse_debug():    
-        pass
+
         
 
  
@@ -223,6 +241,8 @@ class transmitter():
         self.radio = radio_serial(C.NET_ID)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
+        
+        self.debug_manager = debug_manager()
         
         # Transmission variables
         self.data_rate = 64 #kb/s
@@ -273,6 +293,8 @@ class transmitter():
         
         match packet['header']['id']:
             case C.DEBUG_PACKET_ID:
+                self.debug_manager.store_debug_packet(packet['payload'])
+                
                 print("Debug packet:", packet)
             case C.CTS_PACKET_ID:
                 self.transmission_thread.start()
