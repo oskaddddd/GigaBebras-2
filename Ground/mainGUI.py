@@ -23,6 +23,8 @@ import ground_station as gs
 
 from math import tan
 
+from serial.tools import list_ports as list_ports
+
 
 
 
@@ -47,16 +49,11 @@ with open('Ground/Assets/settings.json', 'r') as f:
     
     
 #print("Hello")
-
-
-
-        
-
-        
-
         
 debug_manager = None
 ground_station = None
+
+serial_port = None
     
 #2D plot widget
 class dataPlotWidget(PlotWidget):
@@ -98,6 +95,9 @@ class SliderManager():
     def __init__(self, slider:timeSlider):
         self.time = 0
         self.timeRange = 0
+        
+        print(debug_manager)
+        
         if len(debug_manager.debug_data) != 0:
             self.time = debug_manager.debug_data[0]["timestamp"]
             self.timeRange = debug_manager.debug_data[0]["timestamp"] - debug_manager.debug_data[-1]["timestamp"]
@@ -130,6 +130,7 @@ class SliderManager():
             maximum = True
         
         #Extend the slider range to match the amount of data, with a max of 1000
+        
         if len(debug_manager.debug_data) < 1000:
             self.slider.setMaximum(len(debug_manager.debug_data))
             
@@ -211,17 +212,22 @@ class one_second_loop(QThread):
             self.signal.emit()
             time.sleep(1)
             
-    
-class MainWindow(QMainWindow):
+class MainWindow1(QMainWindow):
     global settings
     global mode
     def __init__(self):
         #Init the UI
         super(MainWindow, self).__init__()
         self.ui = uic.loadUi('Ground/Assets/UI.ui', self)
+    
+class MainWindow(QMainWindow):
+    def __init__(self):
+        global debug_manager
+        global ground_station
+        #Init the UI
+        super(MainWindow, self).__init__()
+        self.ui = uic.loadUi('Ground/Assets/UI.ui', self)
         
-        while True:
-            time.sleep(1)
         #Get the start time of the code to display packets/second graph 
         self.startTime = round(time.time())
         #Arrays for staring data for amount of packets recieved per second
@@ -229,15 +235,17 @@ class MainWindow(QMainWindow):
         #self.debugPlotDebug = [0]
         self.pens = [pg.mkPen(color = "w"), pg.mkPen(color = 'r'), pg.mkPen(color = 'b')]
                 
-        ground_station = None
+        
+
         
         if mode == TRANSMIT:
-            ground_station = gs.transmitter(settings['trans_path'])
+            ground_station = gs.transmitter(settings['trans_path'], serial_port)
         else:
-            ground_station = gs.transmitter(settings['rec_path'])
+            ground_station = gs.receiver(settings['rec_path'], serial_port)
             
         debug_manager = ground_station.debug_manager
-        
+
+
         
         
         #Connect the data selection dropdown to a function responsible for changing the data on the graph
@@ -252,6 +260,8 @@ class MainWindow(QMainWindow):
             if debug_manager.debug_data[-i]["gps"][0] != 0:
                 self.valid_gps_index = max(i, 2)
                 break
+            
+        print(debug_manager)
         
         self.sliderManager = SliderManager(self.ui.timeSlider)
         
@@ -266,6 +276,7 @@ class MainWindow(QMainWindow):
         
         self.ui.timeSlider.timeUpdated.connect(self.updateGraphMarkers)
 
+        ground_station.start()
         
         self.one_second_loop = one_second_loop()
         self.one_second_loop.signal.connect(self.updateDebugPlot)
@@ -425,10 +436,7 @@ class MainWindow(QMainWindow):
         self.ui.dataPlot.plotItem.autoRange()
         
 class StartupDialog(QDialog):
-    global settings
-    global settings
     def __init__(self):
-        global settings
         #Init the UI
         super(StartupDialog, self).__init__()
         self.ui = uic.loadUi('Ground/Assets/dialog.ui', self)
@@ -444,14 +452,24 @@ class StartupDialog(QDialog):
         
         self.path_input.setText('/select transmitter or receiver')
         
-    def finish(self):
+        serial_names = []
+        for port in list_ports.comports():
+            if port.description != "n/a": serial_names.append(port.name)
+        serial_names.append("None")
+        self.serial_box.addItems(serial_names)
         
+        
+    def finish(self):
+        global serial_port
+        serial_port = str(self.serial_box.currentText())
+        if serial_port == "None": serial_port = None
         if mode != None:
             with open('Ground/Assets/settings.json', 'w') as f:
                 json.dump(settings, f)
                 
             
     def handle_toggle(self, checked):
+        global mode
         # Determine which sender triggered the signal
         sender = self.sender()
         self.path_input.setEnabled(True)
@@ -470,6 +488,7 @@ class StartupDialog(QDialog):
             print(f"Mode changed to: {mode}")
     
     def handle_browse(self):
+        global settings
         # Check which mode is active and open the appropriate dialog
         if self.trans_button.isChecked():
             # Open a dialog to select a file
@@ -493,13 +512,18 @@ class StartupDialog(QDialog):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
-    qdarktheme.setup_theme()
+    #qdarktheme.setup_theme()
 
     dialog = StartupDialog()
 
     # Use exec_() to block here until the dialog is accepted/
     dialog.exec()
     if dialog.accepted:
-        print(1)
+
+
         window = MainWindow()
         window.show()
+        app.exec()
+        #print(1)
+        #window = MainWindow()
+        #window.show()

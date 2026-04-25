@@ -82,29 +82,17 @@ class Parser():
 
 
 class radio_serial():
-    def __init__(self, NET_ID, name:str = None, baud = 57600, set_parameters = C.UPDATE_RADIO_SETTINGS):
+    def __init__(self, name:str = None, radio_settings = None, baud = 57600, set_parameters = C.UPDATE_RADIO_SETTINGS):
         '''This function is responsible for handling the serial communication with the radio, radio settings and eceiving the packets from the radio. It is not respnsible for sending packets.'''
         
-        self.radio_config = {
-            "FORMAT": None,
-            "SERIAL_SPEED": None,
-            "AIR_SPEED": 250,
-            "NETID": NET_ID,
-            "TXPOWER": None,
-            "ECC": 1,
-            "MAVLINK": 0,
-            "OPPRESEND": None,
-            "MIN_FREQ": None,
-            "MAX_FREQ": None,
-            "NUM_CHANNELS": None,
-            "DUTY_CYCLE": None,
-            "LBT_RSSI": None,
-            "MANCHESTER": None,
-            "RTSCTS": 0,
-            "MAX_WINDOW": None
-        }
+        self.radio_config = radio_settings
         
         print("WTTFF:", self.radio_config)
+        
+        self.timeout = None
+        self.corrupt_packet_function = None
+        self.timeout_function = None
+        self.count = None
         
         self.serial_setup(name, baud)
         if set_parameters: self.config_radio()
@@ -115,14 +103,16 @@ class radio_serial():
         
         
         
+    def serial_names(self):
+        return list(map(lambda x: x.name, list_ports.comports()))
         
-    
         
     # Establish serial communication with the radio
     def serial_setup(self, name, baud) -> Serial:
         if not name:
             #Find available ports and promt user to choose
             ports = list_ports.comports()
+            
             print("\nCHOOSE POPRT\n------------")
             for i, port in enumerate(ports):
                 if port.description!="n/a":
@@ -131,13 +121,13 @@ class radio_serial():
             name = ports[int(input('\nENTER SELECTION:'))].name
             self.serial = Serial(f"/dev/{name}", baud, rtscts=True)
         else:
-            names = list(map(lambda x: x.name, list_ports.comports()))
+            names = self.serial_names()
             i = 1
             while name not in names:
                 logging.warning(f'Serial [{name}] unavailable. Attempt #{i}, retrying...')
                 i+=1
                 sleep(1)
-                names = list(map(lambda x: x.name, list_ports.comports()))
+                names = self.serial_names()
             self.serial = Serial(f"/dev/{name}", baud)
 
         logging.debug("Serial initialised!")
@@ -232,6 +222,12 @@ class radio_serial():
         self.serial.read_all() #Clear buffer
         serial_buffer = queue.Queue()
         
+        self.timeout = timeout
+        self.corrupt_packet_function = corrupt_packet_function
+        self.timeout_function = timeout_function
+        self.count = count
+        
+        
         # Threaded function to read serial stream and add it to a queue
         def read_serial():
             while not self.stop_event.is_set():
@@ -260,10 +256,10 @@ class radio_serial():
                     t1 = t2
                     rx_buffer.extend(serial_buffer.get())
                     #logging.debug(rx_buffer)
-                elif timeout and packets_received:
-                    if (t2 - t1) > timeout:
+                elif self.timeout and packets_received:
+                    if (t2 - t1) > self.timeout:
                         logging.warning('Timeout')
-                        timeout_function()
+                        self.timeout_function()
                         t1 = t2
 
                 
@@ -307,9 +303,9 @@ class radio_serial():
                     payload_structure = self.packet_structures[header['id']]
                     
                     byte_i = self.header_length
-                    #logging.debug(f'buffer:{rx_buffer}, payload struct: {payload_structure}')
+                    logging.debug(f'buffer:{rx_buffer}, payload struct: {payload_structure}')
                     for key, parser, dimentions, transform in payload_structure:
-                    
+                        logging.debug(key)
                         # Create a temporary buffer to store the data for a certain key
                         temp_container = [0]*dimentions
                         
@@ -349,7 +345,7 @@ class radio_serial():
                         logging.debug({'header': header, 'payload': payload})
                         packet_function({'header': header, 'payload': payload, 'checksum': checksum})
                     
-                        if (count and packets_received >= count):
+                        if (self.count and packets_received >= self.count):
                             self.stop_event.set()
                         
                         else:
@@ -362,8 +358,8 @@ class radio_serial():
                     # Packen invalid -- Reset the parser and pop the first byte of the buffer      
                     else:
                         
-                        if corrupt_packet_function:
-                            corrupt_packet_function({'header': header, 'payload': payload, 'checksum': checksum})
+                        if self.corrupt_packet_function:
+                            self.corrupt_packet_function({'header': header, 'payload': payload, 'checksum': checksum})
                         payload = {}
                         header = {}
                         state = SYNC

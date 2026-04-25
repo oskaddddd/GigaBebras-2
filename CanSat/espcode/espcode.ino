@@ -23,7 +23,13 @@
 #define RESEND_ID 0x2c
 
 //Network Ids that radios will use
-uint8_t net_ids[2] = {15, 63};
+
+#define TRANS_NET_ID 15
+#define REC_NET_ID 63
+
+uint32_t TRANS_FREQ[2] = {433000,  433500};
+uint32_t REC_FREQ[2] = {433700,  434200};
+
 #define CHECKSUM_LENGTH 2
 uint8_t length_byte_offset = 3;
 
@@ -241,7 +247,8 @@ void setup() {
     // Allocate buffers
     storage_buffer = (uint8_t*) malloc(STORAGE_BUFFER_SIZE);
 
-    resend_packet.buffer = (uint16_t*) malloc(MAX_RESEND_COUNT);
+    resend_packet.buffer = (uint16_t*) malloc(MAX_RESEND_COUNT * sizeof(uint16_t));
+
 
     if (storage_buffer == NULL) {
       Serial.println("Failed to allocate buffer!");
@@ -275,7 +282,7 @@ void setup() {
 
     radio.begin(57600, SERIAL_8N1);
 
-    gps.begin(115200, SERIAL_8N1, gps_rx, -1);
+    gps_serial.begin(115200, SERIAL_8N1, gps_rx, -1);
 
     //Initialize BME
     bme.begin();
@@ -283,12 +290,14 @@ void setup() {
     delay(1000);
 
     //Set the network ID to receive
-    setNetID(net_ids[0]);
+    setNetID();
+
+    delay(1000);
 
     xTaskCreatePinnedToCore (
         read_packets,     // Function to implement the task
         "receiver",   // Name of the task
-        1000,      // Stack size in bytes
+        2048,      // Stack size in bytes
         NULL,      // Task input parameter
         0,         // Priority of the task
         NULL,      // Task handle.
@@ -338,7 +347,9 @@ String sendCommand(const String& message) {
     return response;
 }
 
-void setNetID(uint8_t netid) {
+
+//Sets the net ID and the frequencies depending on the currecnt state
+void setNetID() {
     Serial.println("SETTING NET_ID");
     delay(1000);
 
@@ -346,9 +357,20 @@ void setNetID(uint8_t netid) {
     Serial.println(sendCommand("+++"));
 
     // Build command string
-    String cmd = "ATS3=" + String(netid);
-
+    String cmd = "";
+    if (can_state == RECEIVE){cmd = "ATS3=" + String(TRANS_NET_ID);}
+    else{cmd = "ATS3=" + String(REC_NET_ID);}
     Serial.println("Setting NETID...");
+    Serial.println(sendCommand(cmd));
+
+    if (can_state == RECEIVE){cmd = "ATS8=" + String(TRANS_FREQ[0]);}
+    else{cmd = "ATS8=" + String(REC_FREQ[0]);}
+    Serial.println("Setting MIN_FREQ...");
+    Serial.println(sendCommand(cmd));
+    
+    if (can_state == RECEIVE){cmd = "ATS9=" + String(TRANS_FREQ[1]);}
+    else{cmd = "ATS9=" + String(REC_FREQ[1]);}
+    Serial.println("Setting MIN_FREQ...");
     Serial.println(sendCommand(cmd));
 
     // Save settings
@@ -373,9 +395,9 @@ void read_sensors(){
   {  
     debug_packet.payload.gps[0] = gps.location.lng() * pow(10, 6);
     debug_packet.payload.gps[1] = gps.location.lat() * pow(10, 6);
-    data.height = gps.altitude.isValid() ? gps.altitude.meters() : 0;
+    debug_packet.payload.height = gps.altitude.isValid() ? gps.altitude.meters() : 0;
     
-    data.velocity = gps.speed.isValid() ? gps.speed.mps()*100 : 0;
+    debug_packet.payload.velocity = gps.speed.isValid() ? gps.speed.mps()*100 : 0;
   }
 
 }
@@ -636,7 +658,7 @@ void read_packets(void *parameters) {
 
                             //Calculate and set the new checksum
                             uint16_t new_checksum = htons(calculate_checksum(temp, data_packet.header.length-2));
-                            memcpy(temp, &new_checksum, 2);
+                            memcpy(temp+data_packet.header.length-2, &new_checksum, 2);
 
                             //Store packet
                             memcpy(&storage_buffer[MAX_PACKET_SIZE*data_packet.payload.packet_i],
@@ -711,23 +733,24 @@ unsigned long debug_timer = millis();
 void debug(){
     
     for(int i = 0; i < gps_serial.available(); i++){
-      gps.encode(Serial.read());
+      gps.encode(gps_serial.read());
     }
     uint32_t timestamp = millis();
     if (timestamp - debug_timer > DEBUG_DELAY){
-            read_sensors();
-            //Update the timestamp in the debug packet
-            debug_packet.payload.timestamp = timestamp;
-            memcpy(transmit_buffer, &debug_packet, debug_packet.header.length-2);
-            uint16_t checksum = calculate_checksum(transmit_buffer, debug_packet.header.length-2);
-            memcpy(transmit_buffer + (debug_packet.header.length - 2), &checksum, CHECKSUM_LENGTH);
-            send_packet(debug_packet.header.length);
-            debug_timer = timestamp;
+        read_sensors();
+        //Update the timestamp in the debug packet
+        debug_packet.payload.timestamp = timestamp;
+        memcpy(transmit_buffer, &debug_packet, debug_packet.header.length-2);
+        uint16_t checksum = calculate_checksum(transmit_buffer, debug_packet.header.length-2);
+        memcpy(transmit_buffer + (debug_packet.header.length - 2), &checksum, CHECKSUM_LENGTH);
+        send_packet(debug_packet.header.length);
+        debug_timer = timestamp;
     }
 }
 
 
 void transmit_data_packet(uint16_t i){
+    
     //Get packet length
     uint8_t packet_length = storage_buffer[i*MAX_PACKET_SIZE+length_byte_offset];
 
@@ -740,7 +763,8 @@ void transmit_data_packet(uint16_t i){
 
 void transmit_loop()
 {
-    
+    setNetID();
+
     for (uint16_t i = 0; i < packet_count; i++){
         transmit_data_packet(i);
         debug();

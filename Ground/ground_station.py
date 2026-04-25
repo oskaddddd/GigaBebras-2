@@ -18,6 +18,8 @@ import json
 import numpy as np
 from operator import itemgetter
 
+
+
 logging.getLogger().setLevel(logging.DEBUG)
 
 
@@ -40,29 +42,55 @@ class debug_manager():
         self.debug_dict.append(payload)
         
         #Dump data into json
-        with open('debug.json', 'r') as f:
+        with open('./Ground/Assets/debug.json', 'w') as f:
             json.dump(self.debug_dict, f, indent=4)
         
     def extraxtData(self, keyword:str, dtype:np.dtype = np.int32):
         getter = itemgetter(keyword)
-        return np.array(list(map(getter, self.DataBase)), dtype=dtype)
+        return np.array(list(map(getter, self.debug_data)), dtype=dtype)
         
         
         
 
 class receiver():
-    def __init__(self):
-        self.radio = radio_serial(C.NET_ID)  
+    def __init__(self, output_path = "./output/", serial_name = None):
+        
+        radio_config = {
+            "FORMAT": None,
+            "SERIAL_SPEED": None,
+            "AIR_SPEED": 250,
+            "NETID": C.REC_NET_ID,
+            "TXPOWER": None,
+            "ECC": 1,
+            "MAVLINK": 0,
+            "OPPRESEND": None,
+            "MIN_FREQ": C.REC_FREQ[0],
+            "MAX_FREQ": C.REC_FREQ[1],
+            "NUM_CHANNELS": 5,
+            "DUTY_CYCLE": None,
+            "LBT_RSSI": None,
+            "MANCHESTER": None,
+            "RTSCTS": 0,
+            "MAX_WINDOW": None
+        }
+        
+        
+        self.radio = radio_serial(name=serial_name, radio_settings=radio_config)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
+        
+        #Set the output path
+        self.output_path = output_path
+        if self.output_path[-1] != '/': self.output_path += '/'
                 
         self.debug_manager = debug_manager()
         
+        #Tracks how many data packets have been detected including corupt one, helps with recovery when the final packet is corrupt
         self.detected_packets = 0
         
         self.packet_count = -1
         
-        # Meant for testing reseng by faking packet loss, to disable set to true, ik its cxonfusing
+        # Meant for testing resend by faking packet loss, to disable set to true, ik its cxonfusing
         self.resend = True
         self.packets_to_lose = list(range(4, 14))
         self.packets_to_lose.append(165)
@@ -71,7 +99,7 @@ class receiver():
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
                                                       header_id=C.CAN_HEADER_ID)
 
-        
+
         self.CTS_structure = (("CTS", 'uint8'))
         self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure':C.DEBUG_PACKET_STRUCTURE},\
                                             {'id': C.DATA_PACKET_ID, 'structure': C.DATA_PACKET_STRUCTURE})
@@ -80,9 +108,12 @@ class receiver():
         
         self.header_length = self.unpack.get_length(C.HEADER_STRUCTURE, key=lambda x: x[1])
         
+        #The resend format depends on the format of the packet_i or packet_count (uint8, uint16 etc)
         self.resend_format = C.DATA_PACKET_STRUCTURE[0][1]
         self.max_resend_count = (C.MAX_PACKET_SIZE-self.header_length - C.CHECKSUM_SIZE) // self.unpack.item_length[self.resend_format]
         
+        # Hold the index of the last packet that needs to be received,
+        # This updates with the resend of corrupt packets
         self.last_packet = None
         
         #A list that holds all the payloads in order
@@ -91,14 +122,24 @@ class receiver():
         # A range from zero to the number of packets, if a packet is received, that index gets popped
         self.received_packet_tracker = []
         
+        self.resend_timeout = 1.5 #seconds
         
+        kwargs = {
+            'packet_function': self.packet_handler,
+            'corrupt_packet_function': self.corrupt_packet_handler,
+            'timeout': 0,
+            'timeout_function': self.request_resend
+        }
+
+        # Create and start the thread
+        self.receiver_thread = threading.Thread(target=self.radio.read_packets, kwargs=kwargs)
+        self.receiver_thread.daemon = True  # Set as daemon so it closes when the app closes
+        self.receiver_thread.start()
+
         
-        self.radio.read_packets(packet_function=self.packet_handler,
-                                corrupt_packet_function= self.corrupt_packet_handler,
-                                timeout=1.5,
-                                timeout_function=self.request_resend)
-        
-        
+    
+    def start(self):
+        pass
         
         
         
@@ -191,6 +232,9 @@ class receiver():
                 self.detected_packets += 1
                 
                 if self.first_packet:
+                    #Configure the timeout once the first data packet has been received
+                    self.radio.timeout = self.resend_timeout
+                    
                     self.first_packet = False
                     self.packet_count = packet['payload']['packet_count']
                     
@@ -213,11 +257,11 @@ class receiver():
                         self.request_resend()
                     #All packets succesfuly received
                     else:
-                        
+                        self.radio.timeout = 0
                         out = bytearray()
                         for payload in self.payloads:
                             out += payload
-                        with open('./output/out.jpg', 'wb') as f:
+                        with open(self.output_path+'out', 'wb') as f:
                             f.write(out)
                         
                         logging.debug("exiting")
@@ -235,10 +279,29 @@ class receiver():
 
  
 class transmitter():
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, serial_name):
+        
+        radio_config = {
+            "FORMAT": None,
+            "SERIAL_SPEED": None,
+            "AIR_SPEED": 250,
+            "NETID": C.TRANS_NET_ID,
+            "TXPOWER": None,
+            "ECC": 1,
+            "MAVLINK": 0,
+            "OPPRESEND": None,
+            "MIN_FREQ": C.TRANS_FREQ[0],
+            "MAX_FREQ": C.TRANS_FREQ[1],
+            "NUM_CHANNELS": 5,
+            "DUTY_CYCLE": None,
+            "LBT_RSSI": None,
+            "MANCHESTER": None,
+            "RTSCTS": 0,
+            "MAX_WINDOW": None
+        }
         
         #Setup radio
-        self.radio = radio_serial(C.NET_ID)  
+        self.radio = radio_serial(name=serial_name, radio_settings= radio_config)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
         
@@ -249,7 +312,7 @@ class transmitter():
         self.max_packet_length = C.MAX_PACKET_SIZE
         self.debug_time_window = 0.1
         
-        self.DEBUG_MODE = True
+        
         
         # Configure radio for receiving
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
@@ -270,24 +333,29 @@ class transmitter():
         self.build_transmission_queue()
         
         
+        
+        
         self.transmission_thread = threading.Thread(target=self.transmit_data)
         self.receiver_thread = threading.Thread(target=self.radio.read_packets, args=[self.packet_handler])
-        
         self.receiver_thread.start()
-        
-        if self.DEBUG_MODE:
-            print('started')
-            sleep(1)
-            t1 = time()
-            self.transmission_thread.start()
-            print('started')
-            self.transmission_thread.join()
-            print('stoped sending', time()-t1-5)
-            
-            self.radio.stop_reading_packets()
-            print('sent signal to stop reading')
+        #if self.DEBUG_MODE:
+        #    print('started')
+        #    sleep(1)
+        #    t1 = time()
+        #    self.transmission_thread.start()
+        #    print('started')
+        #    self.transmission_thread.join()
+        #    print('stoped sending', time()-t1-5)
+        #    
+        #    self.radio.stop_reading_packets()
+        #    print('sent signal to stop reading')
         
         self.debug_frequency = 1
+        
+    def start(self):
+        
+        self.transmission_thread.start()
+        
         
     def packet_handler(self, packet:dict):
         
@@ -377,6 +445,8 @@ class transmitter():
                 while wait >= time() and self.queue.empty():
                     #print(wait >= time(), wait, time())
                     sleep(0.05)
+        
+        self.radio.stop_reading_packets()
             
     def build_transmission_queue(self):
         
@@ -388,7 +458,7 @@ class transmitter():
         
         with open(self.dir,'rb') as f:
             raw = f.read()
-            print(raw)
+            #print(raw)
             file_length = len(raw)
             
             #Some calsulations for the lengths of the packet

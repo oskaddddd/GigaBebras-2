@@ -1,14 +1,15 @@
 class Constants:
-    NET_ID = 63
+    REC_NET_ID = 15
+    TRANS_NET_ID = 15
     GROUND_HEADER_ID =  b'\xf2\x4f' #65536 max
-    CAN_HEADER_ID = '\x35\x0a'
+    CAN_HEADER_ID = b'\x35\x0a'
     DEBUG_PACKET_ID = b'\xef'
     DATA_PACKET_ID = b'\x24'
     CTS_PACKET_ID = b'\x12'
     
     RESEND_PACKET_ID = b'\x2c'
 
-    UPDATE_RADIO_SETTINGS = False    
+    UPDATE_RADIO_SETTINGS = True    
 
     DEBUG_PACKET_STRUCTURE = (('timestamp', 'uint32', 1, 1),
                               ('gps', 'uint32', 2, 1),
@@ -38,3 +39,9 @@ class Constants:
     #96 - 15 - 7.369 /// 8 - 7.3136
     #128 - 12 - 7.265
     #64 - 19 - 7.87
+    
+    TRANS_FREQ = [433000, 433500]
+    REC_FREQ = [433700, 434200]
+    
+    
+    
