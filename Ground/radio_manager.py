@@ -303,9 +303,9 @@ class radio_serial():
                     payload_structure = self.packet_structures[header['id']]
                     
                     byte_i = self.header_length
-                    logging.debug(f'buffer:{rx_buffer}, payload struct: {payload_structure}')
+                    #logging.debug(f'buffer:{rx_buffer}, payload struct: {payload_structure}')
                     for key, parser, dimentions, transform in payload_structure:
-                        logging.debug(key)
+                        #logging.debug(key)
                         # Create a temporary buffer to store the data for a certain key
                         temp_container = [0]*dimentions
                         

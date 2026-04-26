@@ -152,17 +152,18 @@ class receiver():
         
         count = min(len(self.received_packet_tracker), self.max_resend_count)
         
+        resned_list = list(self.received_packet_tracker)[:count]
         
         # Pack the indexes of the packets that need resending
-        for i in range(count):
-            x = self.received_packet_tracker.pop()
+        for x in resned_list:
+            
             packed_i, l = self.unpack.pack(self.resend_format, x)
             payload+=packed_i
             length += l
-            
+        
             self.last_packet = x
 
-
+        print(f'Asking for retransmission of {resned_list}, packet length: {length}')
             
             
         header = \
@@ -257,6 +258,7 @@ class receiver():
                         self.request_resend()
                     #All packets succesfuly received
                     else:
+
                         self.radio.timeout = 0
                         out = bytearray()
                         for payload in self.payloads:
@@ -436,11 +438,11 @@ class transmitter():
             self.radio.transmit_packet(packet)
             
             
-            sleep(0.5)
+            sleep(0.1)
                             
             # If queue is empty wait a little to see if new data comes in 
             if self.queue.empty():
-                wait = time() + 5
+                wait = time() + 30
                 print(wait >= time(), wait, time())
                 while wait >= time() and self.queue.empty():
                     #print(wait >= time(), wait, time())
