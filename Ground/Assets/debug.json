@@ -1,94 +1,6 @@
 [
     {
-        "timestamp": 49900,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.64,
-        "preasure": 9807.058
-    },
-    {
-        "timestamp": 53902,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.64,
-        "preasure": 9807.058
-    },
-    {
-        "timestamp": 55905,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.64,
-        "preasure": 9807.058
-    },
-    {
-        "timestamp": 59907,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.64,
-        "preasure": 9807.058
-    },
-    {
-        "timestamp": 79917,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.650000000000002,
-        "preasure": 9806.941
-    },
-    {
-        "timestamp": 85920,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.650000000000002,
-        "preasure": 9806.669
-    },
-    {
-        "timestamp": 93924,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.650000000000002,
-        "preasure": 9806.744
-    },
-    {
-        "timestamp": 125940,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.69,
-        "preasure": 9806.728000000001
-    },
-    {
-        "timestamp": 137946,
+        "timestamp": 28896,
         "gps": [
             0,
             0
@@ -96,17 +8,72 @@
         "height": 0,
         "velocity": 0,
         "temprature": 21.7,
-        "preasure": 9806.609
+        "preasure": 9898.653
     },
     {
-        "timestamp": 163959,
+        "timestamp": 6885,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 21.740000000000002,
-        "preasure": 9806.94
+        "temprature": 21.71,
+        "preasure": 9899.344000000001
+    },
+    {
+        "timestamp": 8886,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.71,
+        "preasure": 9899.344000000001
+    },
+    {
+        "timestamp": 8885,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.900000000000002,
+        "preasure": 9900.187
+    },
+    {
+        "timestamp": 10886,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.900000000000002,
+        "preasure": 9900.187
+    },
+    {
+        "timestamp": 12887,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.900000000000002,
+        "preasure": 9900.262
+    },
+    {
+        "timestamp": 14888,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.900000000000002,
+        "preasure": 9900.187
     }
 ]

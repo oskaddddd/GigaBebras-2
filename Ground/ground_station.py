@@ -58,7 +58,7 @@ class receiver():
         radio_config = {
             "FORMAT": None,
             "SERIAL_SPEED": None,
-            "AIR_SPEED": 250,
+            "AIR_SPEED": 64,
             "NETID": C.REC_NET_ID,
             "TXPOWER": None,
             "ECC": 1,
@@ -286,7 +286,7 @@ class transmitter():
         radio_config = {
             "FORMAT": None,
             "SERIAL_SPEED": None,
-            "AIR_SPEED": 250,
+            "AIR_SPEED": 64,
             "NETID": C.TRANS_NET_ID,
             "TXPOWER": None,
             "ECC": 1,
@@ -438,7 +438,7 @@ class transmitter():
             self.radio.transmit_packet(packet)
             
             
-            sleep(0.1)
+            #sleep(0.1)
                             
             # If queue is empty wait a little to see if new data comes in 
             if self.queue.empty():

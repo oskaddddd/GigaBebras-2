@@ -131,7 +131,7 @@ PacketTracker tracker;
 uint8_t bitmapBuffer[(MAX_PACKETS + 7) / 8];  // 125 bytes
 
 uint8_t header_length = sizeof(packet_header);
-uint8_t MAX_RESEND_COUNT = (MAX_PACKET_SIZE - header_length)/2;
+uint8_t MAX_RESEND_COUNT = (MAX_PACKET_SIZE - header_length-2)/2;
 
 QueueHandle_t resend_queue; 
 SemaphoreHandle_t radioMutex;
@@ -301,7 +301,7 @@ void setup() {
         "receiver",   // Name of the task
         4096,      // Stack size in bytes
         NULL,      // Task input parameter
-        0,         // Priority of the task
+        5,         // Priority of the task
         NULL,      // Task handle.
         0          // Core where the task should run
     );
@@ -449,8 +449,10 @@ uint16_t PacketTracker_GetUnreceived(PacketTracker* tracker, uint16_t* outIds, u
         if (!(tracker->bitmap[byteIndex] & (1 << bitIndex))) {
             if (outIds && count < maxOutIds) {
                 outIds[count] = i;
+
+                count++;
             }
-            count++;
+            
         }
     }
 
@@ -472,7 +474,7 @@ uint16_t calculate_checksum(const uint8_t* data, size_t length) {
 
 //PACKET FUNCTION
 bool request_resend(){
-    uint8_t count = PacketTracker_GetUnreceived(&tracker, resend_packet.buffer, MAX_RESEND_COUNT);
+    uint8_t count = PacketTracker_GetUnreceived(&tracker, resend_packet.buffer, (uint16_t)MAX_RESEND_COUNT);
     // All packets received
     if (count == 0){
         return false;
@@ -497,7 +499,7 @@ bool request_resend(){
 
 }
 
-uint8_t temp[MAX_PACKET_SIZE];
+uint8_t temp[MAX_PACKET_SIZE*2];
 
 
 void read_packets(void *parameters) {
@@ -511,7 +513,7 @@ void read_packets(void *parameters) {
 
     while (true) {
         if (pause_receiver){
-            vTaskDelay(0.05);
+            vTaskDelay(50);
             continue;
         }
         
@@ -523,10 +525,15 @@ void read_packets(void *parameters) {
             //Number of bytes to read
             uint8_t N = min((int)bytes_available, receive_buffer.free());
             
-            //How many bytes were actually read
-            size_t bytes_read = radio.readBytes(temp, N);
-            if (bytes_read > 0) {
-                receive_buffer.push(temp, bytes_read);  // Push all read bytes
+            if (N != 0){
+
+            
+                //How many bytes were actually read
+                size_t bytes_read = radio.readBytes(temp, N);
+                if (bytes_read > 0) {
+                    receive_buffer.push(temp, bytes_read);  // Push all read bytes
+                }
+
             }
 
             //Reset timeout tracker
@@ -545,7 +552,7 @@ void read_packets(void *parameters) {
                 t1 = millis();
                 request_resend();
             }
-            vTaskDelay(0.001);
+            vTaskDelay(5);
         }
 
 
@@ -568,14 +575,16 @@ void read_packets(void *parameters) {
                     //Pop the first byte
                     receive_buffer.pop();
                     Serial.println("POPPING DATA");
+                    break;
                 }
-
+                
+                Serial.print("Incoming:");
                 Serial.print(bytes_available);
-                Serial.print(" ");
+                Serial.print(" Free space:");
                 Serial.print(receive_buffer.free());
-                Serial.print(" ");
+                Serial.print(" Bytes in buffer:");
                 Serial.println(receive_buffer.available());
-                break;
+
 
             }
             case READ_HEADER: {
@@ -596,7 +605,6 @@ void read_packets(void *parameters) {
                 }
 
                 packet_state = READ_CHECKSUM;
-                break;
             }
 
             case READ_CHECKSUM: {
@@ -719,6 +727,7 @@ void read_packets(void *parameters) {
                 }
                 packet_state = SYNC;
                 bytes_parsed = 0;
+                break;
 
             }   
             
@@ -797,7 +806,9 @@ void resend_loop(){
         if (xQueueReceive(resend_queue, &retransmit_i, 0) == pdTRUE) {
             transmit_data_packet(retransmit_i);
         }   
-        debug();
+        else{
+            debug();
+        }
     }
 
 }
@@ -805,7 +816,7 @@ void resend_loop(){
 void loop() {
     switch (can_state){
         case RECEIVE:
-            debug();
+            //debug();
             break;
         case TRANSMIT:
             transmit_loop();
