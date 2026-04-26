@@ -755,7 +755,13 @@ void read_packets(void *parameters) {
 
 void send_packet(uint8_t length){
     radio.flush();
+    Serial.print(radio.availableForWrite());
+    Serial.print(" ");
     radio.write(transmit_buffer, length);
+    Serial.print(radio.availableForWrite());
+    Serial.print(" ");
+    radio.flush();
+    Serial.println(radio.availableForWrite());
 }
 
 

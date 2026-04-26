@@ -1,46 +1,24 @@
 [
     {
-        "timestamp": 24894,
+        "timestamp": 38900,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 21.080000000000002,
-        "preasure": 9940.332
+        "temprature": 21.87,
+        "preasure": 9953.743
     },
     {
-        "timestamp": 26895,
+        "timestamp": 40901,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 21.080000000000002,
-        "preasure": 9940.061
-    },
-    {
-        "timestamp": 28896,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.080000000000002,
-        "preasure": 9940.332
-    },
-    {
-        "timestamp": 30897,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.080000000000002,
-        "preasure": 9940.332
+        "temprature": 21.87,
+        "preasure": 9953.822
     }
 ]
