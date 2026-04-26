@@ -36,12 +36,14 @@ class Constants:
     
     CHECKSUM_SIZE = 2
     
+    CHANEL_NUM = 28
+    
     #96 - 15 - 7.369 /// 8 - 7.3136
     #128 - 12 - 7.265
     #64 - 19 - 7.87
     
-    TRANS_FREQ = [433000, 433500]
-    REC_FREQ = [433700, 434200]
+    TRANS_FREQ = [433075, 433825]
+    REC_FREQ = [434025, 434775]
     
     
     

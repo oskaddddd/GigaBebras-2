@@ -1,5 +1,27 @@
 [
     {
+        "timestamp": 24894,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.080000000000002,
+        "preasure": 9940.332
+    },
+    {
+        "timestamp": 26895,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.080000000000002,
+        "preasure": 9940.061
+    },
+    {
         "timestamp": 28896,
         "gps": [
             0,
@@ -7,73 +29,18 @@
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 21.7,
-        "preasure": 9898.653
+        "temprature": 21.080000000000002,
+        "preasure": 9940.332
     },
     {
-        "timestamp": 6885,
+        "timestamp": 30897,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 21.71,
-        "preasure": 9899.344000000001
-    },
-    {
-        "timestamp": 8886,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.71,
-        "preasure": 9899.344000000001
-    },
-    {
-        "timestamp": 8885,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.900000000000002,
-        "preasure": 9900.187
-    },
-    {
-        "timestamp": 10886,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.900000000000002,
-        "preasure": 9900.187
-    },
-    {
-        "timestamp": 12887,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.900000000000002,
-        "preasure": 9900.262
-    },
-    {
-        "timestamp": 14888,
-        "gps": [
-            0,
-            0
-        ],
-        "height": 0,
-        "velocity": 0,
-        "temprature": 21.900000000000002,
-        "preasure": 9900.187
+        "temprature": 21.080000000000002,
+        "preasure": 9940.332
     }
 ]

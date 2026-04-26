@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>797</width>
+    <height>546</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Mapplot</string>
+  </property>
+  <property name="toolButtonStyle">
+   <enum>Qt::ToolButtonIconOnly</enum>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QGridLayout" name="gridLayout_2">
+    <item row="2" column="0">
+     <layout class="QHBoxLayout" name="horizontalLayout_4">
+      <item>
+       <widget class="QProgressBar" name="progressBar">
+        <property name="value">
+         <number>24</number>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item row="0" column="0">
+     <layout class="QHBoxLayout" name="horizontalLayout">
+      <item>
+       <layout class="QVBoxLayout" name="verticalLayout_2">
+        <item>
+         <widget class="gpsWidget" name="locationPlot" native="true">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="verticalLayout">
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <item>
+           <layout class="QVBoxLayout" name="verticalLayout_4"/>
+          </item>
+          <item>
+           <layout class="QVBoxLayout" name="verticalLayout_5">
+            <item>
+             <widget class="dataPlotWidget" name="debugPlot" native="true"/>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QComboBox" name="dataDropdown">
+          <item>
+           <property name="text">
+            <string>height</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>wind</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>velocity</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>preasure</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>temprature</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_3">
+          <item>
+           <widget class="dataPlotWidget" name="dataPlot" native="true"/>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </item>
+    <item row="3" column="0">
+     <widget class="timeSlider" name="timeSlider">
+      <property name="maximum">
+       <number>1000</number>
+      </property>
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>797</width>
+     <height>20</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>gpsWidget</class>
+   <extends>QWidget</extends>
+   <header>mainGUI</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>dataPlotWidget</class>
+   <extends>QWidget</extends>
+   <header>mainGUI</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>timeSlider</class>
+   <extends>QSlider</extends>
+   <header>mainGUI</header>
+  </customwidget>
+ </customwidgets>
+ <tabstops>
+  <tabstop>dataDropdown</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>
