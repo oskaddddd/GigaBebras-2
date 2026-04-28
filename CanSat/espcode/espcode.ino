@@ -21,6 +21,7 @@
 #define DEBUG_ID 0xef
 #define DATA_ID 0x24
 #define RESEND_ID 0x2c
+#define CONNECT_ID 0x12
 
 //Network Ids that radios will use
 
@@ -41,6 +42,7 @@ uint8_t length_byte_offset = 3;
 #define RESEND_TIMEOUT 1500 //millisecods
 
 #define DEBUG_DELAY 2000 // miliseconds
+#define CONNECT_DELAY 500 //miliseconds
 
 //PINS
 #define radio_rx 5
@@ -51,8 +53,9 @@ uint8_t length_byte_offset = 3;
 //STATES
 //Global states
 #define RECEIVE 0
-#define TRANSMIT 1
-#define RESEND 2
+#define CONNECT 1
+#define TRANSMIT 2
+#define RESEND 3
 
 //Packet parsing states
 #define SYNC 0
@@ -86,6 +89,11 @@ struct debug_packet_struct {
     packet_header header;
     debug_payload payload;
 };
+
+struct connect_packet_struct {
+    packet_header header;
+    uint16_t packet_count;
+};
 #pragma pack(pop)
 
 
@@ -107,11 +115,17 @@ struct resend_packet_struct {
 };
 
 
+
+
 resend_packet_struct resend_packet;
 
 debug_packet_struct debug_packet;
 
 data_packet_struct data_packet;
+
+connect_packet_struct connect_packet;
+
+packet_header connect_ack;
 
 
 //BUFFERS
@@ -244,8 +258,10 @@ uint16_t packets_seen = 0;
 uint16_t packets_seen_target = 0;
 
 bool pause_receiver = false;
+bool reconfigured_radio = false;
 
-
+unsigned long debug_timer = millis();
+unsigned long connect_timer = millis();
 
 void setup() {
     Serial.begin(115200);
@@ -277,7 +293,12 @@ void setup() {
 
     resend_packet.header.id = RESEND_ID;
     debug_packet.header.id = DEBUG_ID;
+    connect_packet.header.id = CONNECT_ID;
+    connect_ack.id = CONNECT_ID;
+
     debug_packet.header.length = sizeof(debug_packet)+CHECKSUM_LENGTH;
+    connect_packet.header.length = sizeof(connect_packet)+CHECKSUM_LENGTH;
+    connect_ack.length = header_length + CHECKSUM_LENGTH;
 
     Wire.begin();
     delay(500);
@@ -621,8 +642,7 @@ void read_packets(void *parameters) {
                 if (data_packet.header.id == DATA_ID){
                     // Parse payload
                     packets_seen += 1;
-                    data_packet.payload.packet_count = (receive_buffer[bytes_parsed+1] << 8) | receive_buffer[bytes_parsed];
-                    bytes_parsed+=2;
+
                     data_packet.payload.packet_i = (receive_buffer[bytes_parsed+1] << 8) | receive_buffer[bytes_parsed];
                     bytes_parsed+=2;
 
@@ -649,20 +669,6 @@ void read_packets(void *parameters) {
                     switch (data_packet.header.id){
                         
                         case DATA_ID:{
-                            //Init the tracker system which i totally understand... some bitmaps and shii
-                            if (is_first_packet){
-                                is_first_packet = false;
-
-                                //Set the finishing packet to be the last index
-                                last_packet_i = data_packet.payload.packet_count-1;
-                                packet_count = data_packet.payload.packet_count;
-                                packets_seen_target = packet_count;
-                            
-                                if (!PacketTracker_Init(&tracker, data_packet.payload.packet_count)) {
-                                    Serial.println("Failed to alocate tracker buffer");
-                                    return; // Allocation failed
-                                }
-                            }
                             // Mark packet as received
                             PacketTracker_SetReceived(&tracker, data_packet.payload.packet_i);
 
@@ -687,7 +693,7 @@ void read_packets(void *parameters) {
                                 packets_seen = 0;
                                 //if no more packets need to be resent - start transmitting
                                 if (!request_resend()){
-                                    can_state = TRANSMIT;
+                                    can_state = CONNECT;
                                 }
                             }
                             
@@ -698,24 +704,67 @@ void read_packets(void *parameters) {
                         }
 
                         case RESEND_ID:{
+                            if (can_state == RESEND){
+                                uint8_t resned_count = (data_packet.header.length - header_length - CHECKSUM_LENGTH) / 2;
+                                uint16_t resend_packet_i;
+                                
+                                Serial.print("Put queue");
+                                for (int i = 0; i < resned_count; i++){
+                                    //Read the resend packet index
+                                    resend_packet_i = (temp[header_length + 2*i + 1] << 8) | temp[header_length + 2*i];
+                                    Serial.print('[');
+                                    Serial.print(resend_packet_i);
+                                    Serial.println(']');
+                                    if (xQueueSend(resend_queue, &resend_packet_i, 10) != pdTRUE) {
+                                        Serial.println("Queue full :(");
+                                    }
 
-                            uint8_t resned_count = (data_packet.header.length - header_length - CHECKSUM_LENGTH) / 2;
-                            uint16_t resend_packet_i;
-                            
-                            Serial.print("Put queue");
-                            for (int i = 0; i < resned_count; i++){
-                                //Read the resend packet index
-                                resend_packet_i = (temp[header_length + 2*i + 1] << 8) | temp[header_length + 2*i];
-                                Serial.print('[');
-                                Serial.print(resend_packet_i);
-                                Serial.println(']');
-                                if (xQueueSend(resend_queue, &resend_packet_i, 10) != pdTRUE) {
-                                    Serial.println("Queue full :(");
                                 }
-
                             }
 
+
                             break;
+
+                        }
+                        case CONNECT_ID:{
+                            Serial.print("CONNECTED");
+                            
+                            // Connection ack request from transmitter
+                            if (can_state == RECEIVE){
+                                //Init the tracker system which i totally understand... some bitmaps and shii
+                                if (is_first_packet){
+                                    is_first_packet = false;
+                                    
+                                    data_packet.payload.packet_count = (receive_buffer[bytes_parsed+1] << 8) | receive_buffer[bytes_parsed];
+                                    bytes_parsed+=2;
+                                    //Set the finishing packet to be the last index
+                                    last_packet_i = data_packet.payload.packet_count-1;
+
+                                    //Store the packet count
+                                    packet_count = data_packet.payload.packet_count;
+                                    connect_packet.packet_count  = packet_count;
+
+
+                                    packets_seen_target = packet_count;
+                                
+                                    if (!PacketTracker_Init(&tracker, data_packet.payload.packet_count)) {
+                                        Serial.println("Failed to alocate tracker buffer");
+                                        return; // Allocation failed
+                                    }
+                                }
+
+                                // Copy ack to transmit buffer
+                                memcpy(transmit_buffer, &connect_ack, connect_ack.length-CHECKSUM_LENGTH);
+                                uint16_t checksum = calculate_checksum(transmit_buffer, connect_ack.length-CHECKSUM_LENGTH);
+                                memcpy(transmit_buffer + (connect_ack.length - CHECKSUM_LENGTH), &checksum, CHECKSUM_LENGTH);
+
+                                send_packet(connect_ack.length);
+                            }   
+                            // Ack from the receiver
+                            else{
+                                // Change the state from connect to transmit
+                                can_state = TRANSMIT;
+                            }
 
                         }
                     }
@@ -734,7 +783,7 @@ void read_packets(void *parameters) {
                         packets_seen = 0;
                         //if no more packets need to be resent - start transmitting
                         if (!request_resend()){
-                            can_state = TRANSMIT;
+                            can_state = CONNECT;
                         }
                     }
 
@@ -765,7 +814,7 @@ void send_packet(uint8_t length){
 }
 
 
-unsigned long debug_timer = millis();
+
 // A non looping function which can be called to check it is time to debug and if so debug
 void debug(){
     
@@ -777,9 +826,9 @@ void debug(){
         read_sensors();
         //Update the timestamp in the debug packet
         debug_packet.payload.timestamp = timestamp;
-        memcpy(transmit_buffer, &debug_packet, debug_packet.header.length-2);
-        uint16_t checksum = calculate_checksum(transmit_buffer, debug_packet.header.length-2);
-        memcpy(transmit_buffer + (debug_packet.header.length - 2), &checksum, CHECKSUM_LENGTH);
+        memcpy(transmit_buffer, &debug_packet, debug_packet.header.length-CHECKSUM_LENGTH);
+        uint16_t checksum = calculate_checksum(transmit_buffer, debug_packet.header.length-CHECKSUM_LENGTH);
+        memcpy(transmit_buffer + (debug_packet.header.length - CHECKSUM_LENGTH), &checksum, CHECKSUM_LENGTH);
         send_packet(debug_packet.header.length);
         debug_timer = timestamp;
     }
@@ -800,18 +849,37 @@ void transmit_data_packet(uint16_t i){
     send_packet(packet_length);
 }
 
+void connect_loop(){
+    if (reconfigured_radio == false){
+        reconfigured_radio = true;
+
+        //Pause the reading thread
+        pause_receiver = true;
+
+        //Reconfigure and restart the radio
+        setNetID();
+
+        //Resume the reading thread
+        pause_receiver = false;
+
+        //Prepare the connect packet for transmission
+        memcpy(transmit_buffer, &connect_packet, connect_packet.header.length-CHECKSUM_LENGTH);
+        uint16_t checksum = calculate_checksum(transmit_buffer, connect_packet.header.length-CHECKSUM_LENGTH);
+        memcpy(transmit_buffer + (connect_packet.header.length - CHECKSUM_LENGTH), &checksum, CHECKSUM_LENGTH);
+    }
+    uint32_t timestamp = millis(); 
+
+    if (timestamp - connect_timer > CONNECT_DELAY){
+        connect_timer = timestamp;
+        send_packet(connect_packet.header.length);
+    }
+    else{
+        delay(10);
+    }
+}
+
 void transmit_loop()
 {   
-    //Pause the reading thread
-    pause_receiver = true;
-
-    //Reconfigure and restart the radio
-    setNetID();
-
-    //Resume the reading thread
-    pause_receiver = false;
-
-
     //Transmit the data packets
     for (uint16_t i = 0; i < packet_count; i++){
         transmit_data_packet(i);
@@ -820,6 +888,7 @@ void transmit_loop()
     }
     can_state = RESEND;
 }
+
 
 void resend_loop(){
     uint16_t retransmit_i;
@@ -840,11 +909,19 @@ void loop() {
         case RECEIVE:
             debug();
             break;
+        
+        case CONNECT:
+            
+            connect_loop();
+            break;
+
+
         case TRANSMIT:
             transmit_loop();
             break;
         case RESEND:
             resend_loop();
+            break;
 
 
     }

@@ -90,19 +90,23 @@ class receiver():
         
         self.packet_count = -1
         
+        self.expected_packet_count = -1
+        
         # Meant for testing resend by faking packet loss, to disable set to true, ik its cxonfusing
         self.resend = True
         self.packets_to_lose = list(range(4, 14))
         self.packets_to_lose.append(165)
         
         
+        
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
                                                       header_id=C.CAN_HEADER_ID)
 
 
-        self.CTS_structure = (("CTS", 'uint8'))
+        self.connect_rx_structure = [("packet_count", 'uint16', 1, 1)]
         self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure':C.DEBUG_PACKET_STRUCTURE},\
-                                            {'id': C.DATA_PACKET_ID, 'structure': C.DATA_PACKET_STRUCTURE})
+                                            {'id': C.DATA_PACKET_ID, 'structure': C.DATA_PACKET_STRUCTURE},\
+                                            { 'id': C.CONNECT_PACKET_ID, 'structure': C.CONNECT_TRANS_STRUCTURE})
 
         self.first_packet = True
         
@@ -123,6 +127,15 @@ class receiver():
         self.received_packet_tracker = []
         
         self.resend_timeout = 1.5 #seconds
+        
+        
+        
+        connect_header = \
+               {"header_id" : C.GROUND_HEADER_ID,
+                'id': C.CONNECT_PACKET_ID, 
+                'length': self.header_length+C.CHECKSUM_SIZE}
+        self.connect_resp_packet, _ = self.pack_sturct(connect_header, C.HEADER_STRUCTURE)
+        self.connect_resp_packet += calculate_checksum(self.connect_resp_packet)
         
         kwargs = {
             'packet_function': self.packet_handler,
@@ -153,6 +166,10 @@ class receiver():
         count = min(len(self.received_packet_tracker), self.max_resend_count)
         
         resned_list = list(self.received_packet_tracker)[:count]
+        
+        # Reset packet counters
+        self.expected_packet_count = count
+        self.detected_packets = 0
         
         # Pack the indexes of the packets that need resending
         for x in resned_list:
@@ -210,7 +227,7 @@ class receiver():
             self.detected_packets += 1
             
             # If its the last packet or we have received (including corupted) enough packets
-            if self.last_packet == packet['payload']['packet_i'] or self.detected_packets == self.packet_count:
+            if self.last_packet == packet['payload']['packet_i'] or self.detected_packets == self.expected_packet_count:
                 logging.warning(f'packets {self.received_packet_tracker} corrupt or not received (INCLUDING LAST), requesting resend')
                 self.request_resend()
             
@@ -232,18 +249,6 @@ class receiver():
                 
                 self.detected_packets += 1
                 
-                if self.first_packet:
-                    #Configure the timeout once the first data packet has been received
-                    self.radio.timeout = self.resend_timeout
-                    
-                    self.first_packet = False
-                    self.packet_count = packet['payload']['packet_count']
-                    
-                    self.last_packet = self.packet_count-1
-                    
-                    # Initiate lists
-                    self.payloads = [0]*self.packet_count
-                    self.received_packet_tracker = set(range(self.packet_count))
                     
                 self.received_packet_tracker.discard(packet_i)
                 self.payloads[packet_i] = packet['payload']['payload']
@@ -267,6 +272,7 @@ class receiver():
                             f.write(out)
                         
                         logging.debug("exiting")
+                        print('time:', time()-self.start_time)
                         self.radio.stop_reading_packets()
                         exit()
                 
@@ -275,6 +281,32 @@ class receiver():
                 self.debug_manager.store_debug_packet(packet['payload'])
                 
                 print("Debug packet:", packet)
+                
+            case C.CONNECT_PACKET_ID:
+                
+                # Once a Connect packet is received configure all the buffers, 
+                # but do not reconfigure them if multiple are received (CanSat did not receive ack)
+                if self.first_packet:
+                    #Configure the timeout once the first data packet has been received
+                    self.radio.timeout = self.resend_timeout
+                    
+                    self.first_packet = False
+                    self.packet_count = packet['payload']['packet_count']
+                    
+                    self.expected_packet_count = self.packet_count
+                    
+                    self.last_packet = self.packet_count-1
+                    
+                    # Initiate lists
+                    self.payloads = [0]*self.packet_count
+                    self.received_packet_tracker = set(range(self.packet_count))
+                
+                # Send ack
+                self.radio.transmit_packet(self.connect_resp_packet)
+                
+                self.start_time = time()
+                
+                
         
 
         
@@ -309,24 +341,18 @@ class transmitter():
         
         self.debug_manager = debug_manager()
         
-        # Transmission variables
-        self.data_rate = 64 #kb/s
-        self.max_packet_length = C.MAX_PACKET_SIZE
-        self.debug_time_window = 0.1
-        
-        
+        # Transmission variables        
+        self.connect_delay = 0.1
         
         # Configure radio for receiving
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
                                                       header_id=C.CAN_HEADER_ID)
         
         
-        self.CTS_structure = (("CTS", 'uint8'))
+        #self.CTS_structure = (("CTS", 'uint8'))
         self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure':C.DEBUG_PACKET_STRUCTURE},
-                                            {'id': C.CTS_PACKET_ID, 'structure': C.DEBUG_PACKET_STRUCTURE},
-                                            {'id': C.RESEND_PACKET_ID, 'structure': C.RESEND_PACKET_STRUCTURE})
-        
-        sleep(1)
+                                            {'id': C.RESEND_PACKET_ID, 'structure': C.RESEND_PACKET_STRUCTURE},
+                                            {'id':C.CONNECT_PACKET_ID, 'structure': C.CONNECT_REC_STRUCTURE})
         
         self.dir = data_dir
         self.payloads = []
@@ -335,28 +361,18 @@ class transmitter():
         
         self.build_transmission_queue()
         
+        self.got_ack = False
+        
         
         
         
         self.transmission_thread = threading.Thread(target=self.transmit_data)
         self.receiver_thread = threading.Thread(target=self.radio.read_packets, args=[self.packet_handler])
         self.receiver_thread.start()
-        #if self.DEBUG_MODE:
-        #    print('started')
-        #    sleep(1)
-        #    t1 = time()
-        #    self.transmission_thread.start()
-        #    print('started')
-        #    self.transmission_thread.join()
-        #    print('stoped sending', time()-t1-5)
-        #    
-        #    self.radio.stop_reading_packets()
-        #    print('sent signal to stop reading')
         
-        self.debug_frequency = 1
         
     def start(self):
-        
+        self.start_time = time()
         self.transmission_thread.start()
         
         
@@ -367,8 +383,6 @@ class transmitter():
                 self.debug_manager.store_debug_packet(packet['payload'])
                 
                 print("Debug packet:", packet)
-            case C.CTS_PACKET_ID:
-                self.transmission_thread.start()
                 
             case C.RESEND_PACKET_ID:
                 
@@ -385,6 +399,9 @@ class transmitter():
                     
                     self.queue.put(packet_i)
                 print(self.queue)
+            
+            case C.CONNECT_PACKET_ID:
+                self.got_ack = True
                     
                        
         
@@ -414,11 +431,25 @@ class transmitter():
             
     def transmit_data(self):
         
+        # Header to be used in transmission, variables will be changed after ack
         header = \
                {"header_id" : C.GROUND_HEADER_ID,
-                'id': C.DATA_PACKET_ID, 
-                'length': 0}
+                'id': C.CONNECT_PACKET_ID, 
+                'length': self.header_length + 2 + C.CHECKSUM_SIZE}
                
+        
+        connect_packet, _ = self.pack_sturct(header, C.HEADER_STRUCTURE)
+        connect_payload, _ = self.pack_sturct({"packet_count": len(self.payloads)}, C.CONNECT_TRANS_STRUCTURE)
+        
+        connect_packet += connect_payload
+        connect_packet += calculate_checksum(connect_packet)
+        
+        
+        while not self.got_ack:
+            self.radio.transmit_packet(connect_packet)
+            sleep(self.connect_delay)
+            
+        header['id'] = C.DATA_PACKET_ID
         
         while not self.queue.empty():
 
@@ -443,12 +474,12 @@ class transmitter():
                             
             # If queue is empty wait a little to see if new data comes in 
             if self.queue.empty():
-                wait = time() + 30
+                wait = time() + 10
                 print(wait >= time(), wait, time())
                 while wait >= time() and self.queue.empty():
                     #print(wait >= time(), wait, time())
                     sleep(0.05)
-        
+        print(time()-10-self.start_time)
         self.radio.stop_reading_packets()
             
     def build_transmission_queue(self):
@@ -469,7 +500,7 @@ class transmitter():
 
             non_data_payload_length = self.unpack.get_length(C.DATA_PACKET_STRUCTURE, key=lambda x: x[1])
             
-            max_payload_length = self.max_packet_length - self.header_length - non_data_payload_length - C.CHECKSUM_SIZE
+            max_payload_length = C.MAX_PACKET_SIZE - self.header_length - non_data_payload_length - C.CHECKSUM_SIZE
             
             payload['packet_count'] = ceil(file_length/max_payload_length)
             

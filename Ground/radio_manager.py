@@ -265,7 +265,7 @@ class radio_serial():
                 
                 if state == SYNC:
                     if len(rx_buffer) < 3: 
-                        sleep(0.005)
+                        sleep(0.001)
                         continue # Wait for more data to flow in 
                     
                     #Check if the header matches and if the id is valid
@@ -279,7 +279,7 @@ class radio_serial():
                 # Parse the header
                 elif state == HEADER:
                     if len(rx_buffer) < self.header_length:
-                        sleep(0.005)
+                        sleep(0.001)
                         continue # Wait for more data to flow in 
                     
 
@@ -295,7 +295,7 @@ class radio_serial():
                 elif state == PAYLOAD:
                     
                     if len(rx_buffer) < header['length']-C.CHECKSUM_SIZE: 
-                        sleep(0.005)
+                        sleep(0.001)
                         continue # Wait for more data to flow in 
 
                     self.parser.packet_length = header['length']
@@ -323,7 +323,7 @@ class radio_serial():
                     
                 elif state == CHECKSUM:
                     if len(rx_buffer) < header['length']: 
-                        sleep(0.005)
+                        sleep(0.001)
                         continue # Wait for more data to flow in 
                     
                     # Read the footer

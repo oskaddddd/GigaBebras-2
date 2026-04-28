@@ -5,7 +5,7 @@ class Constants:
     CAN_HEADER_ID = b'\x35\x0a'
     DEBUG_PACKET_ID = b'\xef'
     DATA_PACKET_ID = b'\x24'
-    CTS_PACKET_ID = b'\x12'
+    CONNECT_PACKET_ID = b'\x12'
     
     RESEND_PACKET_ID = b'\x2c'
 
@@ -19,11 +19,13 @@ class Constants:
                               ('preasure', 'uint32', 1, 1/1000)
                               )
 
-    DATA_PACKET_STRUCTURE = (('packet_count', 'uint16', 1, 1),
-                         ('packet_i', 'uint16', 1, 1),
-                         ('payload', 'payload', 1, 1))
+    DATA_PACKET_STRUCTURE = (('packet_i', 'uint16', 1, 1),
+                             ('payload', 'payload', 1, 1))
     
     RESEND_PACKET_STRUCTURE = [('payload', 'payload', 1, 1)]
+    
+    CONNECT_TRANS_STRUCTURE = [('packet_count', 'uint16', 1, 1)]
+    CONNECT_REC_STRUCTURE = []
 
     radio_name = None
 
