@@ -332,6 +332,7 @@ class transmitter():
         self.payloads = []
         
         self.queue = Queue()
+        
         self.build_transmission_queue()
         
         
