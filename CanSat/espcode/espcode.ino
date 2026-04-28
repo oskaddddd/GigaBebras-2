@@ -290,7 +290,7 @@ void setup() {
 
     radio.begin(57600, SERIAL_8N1);
 
-    gps_serial.begin(115200, SERIAL_8N1, gps_rx, -1);
+    gps_serial.begin(9600, SERIAL_8N1, gps_rx, -1);
 
     //Initialize BME
     bme.begin();

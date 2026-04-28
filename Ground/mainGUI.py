@@ -242,10 +242,12 @@ class MainWindow(QMainWindow):
             ground_station = gs.transmitter(settings['trans_path'], serial_port)
         else:
             ground_station = gs.receiver(settings['rec_path'], serial_port)
+            self.start_button.setEnabled(False)
             
         debug_manager = ground_station.debug_manager
 
-
+        # Cocect start button to the start function 
+        self.start_button.clicked.connect(ground_station.start)
         
         
         #Connect the data selection dropdown to a function responsible for changing the data on the graph
@@ -276,11 +278,22 @@ class MainWindow(QMainWindow):
         
         self.ui.timeSlider.timeUpdated.connect(self.updateGraphMarkers)
 
-        ground_station.start()
         
         self.one_second_loop = one_second_loop()
         self.one_second_loop.signal.connect(self.updateDebugPlot)
         self.one_second_loop.start()
+        
+    
+    def getProgress(self):
+        if mode == TRANSMIT:
+            return (ground_station.queue.qsize()*100)//len(ground_station.payloads)
+        else:
+            if ground_station.packet_count != -1:
+                unreceived = len(ground_station.received_packet_tracker)
+                total = ground_station.packet_count
+                return (total-unreceived)*100//total
+            else:
+                return 0
         
         
     def updateGraphMarkers(self, index):

@@ -1,5 +1,5 @@
 class Constants:
-    REC_NET_ID = 15
+    REC_NET_ID = 63
     TRANS_NET_ID = 15
     GROUND_HEADER_ID =  b'\xf2\x4f' #65536 max
     CAN_HEADER_ID = b'\x35\x0a'
@@ -36,7 +36,7 @@ class Constants:
     
     CHECKSUM_SIZE = 2
     
-    CHANEL_NUM = 28
+    CHANEL_NUM = 14
     
     #96 - 15 - 7.369 /// 8 - 7.3136
     #128 - 12 - 7.265
