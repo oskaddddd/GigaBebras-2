@@ -31,6 +31,8 @@
 uint32_t TRANS_FREQ[2] = {433075,  433825};
 uint32_t REC_FREQ[2] = {434025,  434775};
 
+#define TRANSMIT_DELAY  20 //milliseconds
+
 #define CHECKSUM_LENGTH 2
 uint8_t length_byte_offset = 3;
 
@@ -262,6 +264,7 @@ bool reconfigured_radio = false;
 
 unsigned long debug_timer = millis();
 unsigned long connect_timer = millis();
+unsigned long transmit_timer = millis();
 
 void setup() {
     Serial.begin(115200);
@@ -803,6 +806,14 @@ void read_packets(void *parameters) {
 
 
 void send_packet(uint8_t length){
+    unsigned long t = millis();
+
+    while (t - transmit_timer < TRANSMIT_DELAY){
+        delay(1);
+        t = millis();
+    }
+    transmit_timer = t;
+
     radio.flush();
     Serial.print(radio.availableForWrite());
     Serial.print(" ");
@@ -880,10 +891,15 @@ void connect_loop(){
 
 void transmit_loop()
 {   
+    unsigned long delta = millis();
     //Transmit the data packets
     for (uint16_t i = 0; i < packet_count; i++){
         transmit_data_packet(i);
         debug();
+        unsigned long t = millis();
+        Serial.print("delta:");
+        Serial.println(t-delta);
+        delta = t;
         
     }
     can_state = RESEND;

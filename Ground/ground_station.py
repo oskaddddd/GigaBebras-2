@@ -31,9 +31,9 @@ class debug_manager():
 
         with open("./Ground/Assets/debug.json", 'r') as f:
             self.debug_dict = json.load(f)
-            if len(self.debug_dict) != 0:
-                if input("There is data in debug.json, clear to delete? y/n:") == 'y':
-                    self.debug_dict = []
+            #if len(self.debug_dict) != 0:
+                #if input("There is data in debug.json, clear to delete? y/n:") == 'y':
+                #    self.debug_dict = []
 
         self.debug_data = SortedList(self.debug_dict, key=lambda x: -x['timestamp'])
         
@@ -70,10 +70,11 @@ class receiver():
             "DUTY_CYCLE": 100,
             "LBT_RSSI": None,
             "MANCHESTER": None,
-            "RTSCTS": 0,
+            "RTSCTS": 1,
             "MAX_WINDOW": None
         }
         
+        self.start_time = 0
         
         self.radio = radio_serial(name=serial_name, radio_settings=radio_config)  
         self.serial = self.radio.serial 
@@ -97,7 +98,7 @@ class receiver():
         self.packets_to_lose = list(range(4, 14))
         self.packets_to_lose.append(165)
         
-        
+        self.packets_resent = 0
         
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
                                                       header_id=C.CAN_HEADER_ID)
@@ -170,6 +171,8 @@ class receiver():
         # Reset packet counters
         self.expected_packet_count = count
         self.detected_packets = 0
+        
+        
         
         # Pack the indexes of the packets that need resending
         for x in resned_list:
@@ -300,6 +303,8 @@ class receiver():
                     # Initiate lists
                     self.payloads = [0]*self.packet_count
                     self.received_packet_tracker = set(range(self.packet_count))
+                    
+                    self.start_time = time()
                 
                 # Send ack
                 self.radio.transmit_packet(self.connect_resp_packet)
@@ -363,8 +368,10 @@ class transmitter():
         
         self.got_ack = False
         
+        self.start_time = 0
         
-        
+        self.packets_resent = 0
+        self.file_size = 0
         
         self.transmission_thread = threading.Thread(target=self.transmit_data)
         self.receiver_thread = threading.Thread(target=self.radio.read_packets, args=[self.packet_handler])
@@ -372,7 +379,6 @@ class transmitter():
         
         
     def start(self):
-        self.start_time = time()
         self.transmission_thread.start()
         
         
@@ -444,12 +450,17 @@ class transmitter():
         connect_packet += connect_payload
         connect_packet += calculate_checksum(connect_packet)
         
-        
+        logging.debug("Checking link...")
         while not self.got_ack:
             self.radio.transmit_packet(connect_packet)
             sleep(self.connect_delay)
-            
+        
+        logging.debug("Connection established")
+        self.start_time = time() 
         header['id'] = C.DATA_PACKET_ID
+        
+        transmit_time_tracker = time()
+        
         
         while not self.queue.empty():
 
@@ -465,9 +476,19 @@ class transmitter():
             packet_wo_footer = packed_header+packed_payload 
             
             packet = packet_wo_footer + calculate_checksum(packet_wo_footer)
-                   
+            
+            
             print(packet)
+            t = time()
+            while (t-transmit_time_tracker < C.TRANSMIT_DELAY):
+                sleep(0.001)
+                t = time()
+            transmit_time_tracker = t
+            
             self.radio.transmit_packet(packet)
+            
+            print("TIME:", time()-t)
+
             
             
             #sleep(0.1)

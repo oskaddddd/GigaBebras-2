@@ -16,7 +16,7 @@ class Constants:
                               ('height', 'uint16', 1, 1),
                               ('velocity', 'int16', 1, 1),
                               ('temprature', 'int16', 1, 1/100),
-                              ('preasure', 'uint32', 1, 1/1000)
+                              ('pressure', 'uint32', 1, 1/1000)
                               )
 
     DATA_PACKET_STRUCTURE = (('packet_i', 'uint16', 1, 1),
@@ -36,9 +36,11 @@ class Constants:
     
     MAX_PACKET_SIZE = 64
     
+    TRANSMIT_DELAY = 0.020
+    
     CHECKSUM_SIZE = 2
     
-    CHANEL_NUM = 14
+    CHANEL_NUM = 7
     
     #96 - 15 - 7.369 /// 8 - 7.3136
     #128 - 12 - 7.265

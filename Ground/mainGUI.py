@@ -231,23 +231,32 @@ class MainWindow(QMainWindow):
         #Get the start time of the code to display packets/second graph 
         self.startTime = round(time.time())
         #Arrays for staring data for amount of packets recieved per second
-        self.debugPlotData = [0]
-        #self.debugPlotDebug = [0]
+
         self.pens = [pg.mkPen(color = "w"), pg.mkPen(color = 'r'), pg.mkPen(color = 'b')]
                 
-        
+        #self.ui.text_frame.setStyleSheet('background-color: rgb(50,50,50)')  
 
-        
-        if mode == TRANSMIT:
-            ground_station = gs.transmitter(settings['trans_path'], serial_port)
-        else:
-            ground_station = gs.receiver(settings['rec_path'], serial_port)
-            self.start_button.setEnabled(False)
+        if serial_port != None:
+            if mode == TRANSMIT:
+                ground_station = gs.transmitter(settings['trans_path'], serial_port)
+            else:
+                ground_station = gs.receiver(settings['rec_path'], serial_port)
+                self.start_button.setEnabled(False)
             
-        debug_manager = ground_station.debug_manager
+            debug_manager = ground_station.debug_manager
 
-        # Cocect start button to the start function 
-        self.start_button.clicked.connect(ground_station.start)
+            # Cocect start button to the start function 
+            self.start_button.clicked.connect(ground_station.start)
+        else:
+            debug_manager = gs.debug_manager()
+            
+
+            
+        if len(debug_manager.debug_dict) != 0:
+            dialog = DeleteDialog()
+
+            # Use exec_() to block here until the dialog is accepted/
+            dialog.exec()
         
         
         #Connect the data selection dropdown to a function responsible for changing the data on the graph
@@ -255,7 +264,7 @@ class MainWindow(QMainWindow):
         self.dataType = "height"
         
         #self.ui.debugPlot.curve.pen = self.pens[1]
-        self.ui.debugPlot.setLabel("left", "packets")
+        #self.ui.debugPlot.setLabel("left", "packets")
         
         self.valid_gps_index = 2
         for i in range(1, len(debug_manager.debug_data)):
@@ -280,7 +289,7 @@ class MainWindow(QMainWindow):
 
         
         self.one_second_loop = one_second_loop()
-        self.one_second_loop.signal.connect(self.updateDebugPlot)
+        self.one_second_loop.signal.connect(self.updateData)
         self.one_second_loop.start()
         
     
@@ -367,30 +376,21 @@ class MainWindow(QMainWindow):
         self.ui.locationPlot.wind.setData(pos = wind_data)
         #self.updateGraphMarkers(self.sliderManager.index)
             
-    def updateDebugPlot(self, newPackets = 0):
-                
-        #Calculate the local time (Since start of program)
-        tStamp = round(time.time()) - self.startTime
-        
-        #Expand {packets per second} arrays, till their lentgh is equal to program runtime in seconds
-        while len(self.debugPlotData) < tStamp+1:
-            self.debugPlotData.append(0)
-
-        self.debugPlotData[tStamp] += newPackets
-        
-        self.ui.debugPlot.curve.setData(x = list(range(tStamp+1)), y = self.debugPlotData)
-        
+   
     
     #Handles ploting when new data is recieved      
     def updateData(self):
         print(self.valid_gps_index)
         self.sliderManager.updateTimerange()
-        self.updateDebugPlot(1)
+
+
+        if ground_station:
+            if ground_station.start_time != 0:
+                self.time_label.setText(f"{round(time.time()-ground_station.start_time, 1)} s")
+                
+            self.progressBar.setValue(self.getProgress())
         
         #Update the gps plot
-                
- 
-
         self.timeline = debug_manager.extraxtData("timestamp")[:]/1000
                 
                 
@@ -447,6 +447,22 @@ class MainWindow(QMainWindow):
         self.ui.dataPlot.centerOn(self.ui.dataPlot.curve)
         self.ui.dataPlot.plotItem.enableAutoRange('xy', True)
         self.ui.dataPlot.plotItem.autoRange()
+        
+class DeleteDialog(QDialog):
+    def __init__(self):
+        #Init the UI
+        super(DeleteDialog, self).__init__()
+        self.ui = uic.loadUi('Ground/Assets/delete_dialog.ui', self)
+        
+    def keep(self):
+        self.accept()
+        
+    def delete(self):
+        
+        global debug_manager
+        debug_manager.debug_dict = []
+        debug_manager.debug_data = gs.SortedList(debug_manager.debug_dict, key=lambda x: -x['timestamp'])
+        self.accept()
         
 class StartupDialog(QDialog):
     def __init__(self):
