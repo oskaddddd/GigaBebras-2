@@ -23,6 +23,8 @@ import ground_station as gs
 
 from math import tan
 
+import atexit
+
 from serial.tools import list_ports as list_ports
 
 
@@ -42,7 +44,11 @@ TRANSMIT = 0
 RECEIVE = 1
 mode = TRANSMIT
 
+update_frequency = 10
+
 settings = {}
+
+keep_data = True
 
 with open('Ground/Assets/settings.json', 'r') as f:
     settings = json.load(f)
@@ -65,7 +71,7 @@ class dataPlotWidget(PlotWidget):
         
         self.curve = pg.PlotDataItem(pen = pg.mkPen('g', ))
         self.addItem(self.curve)
-        self.curve1 = pg.PlotDataItem(pen = pg.mkPen('b', ))
+        self.curve1 = pg.PlotDataItem(pen = pg.mkPen('r', ))
         self.addItem(self.curve1)
         self.markerLine = pg.InfiniteLine(pos=0, pen = pg.mkPen('r'))
         self.addItem(self.markerLine)
@@ -203,14 +209,14 @@ class gpsWidget(gl.GLViewWidget):
         
     
     
-class one_second_loop(QThread):
+class update_loop(QThread):
     signal = pyqtSignal()
     def __init__(self):
         super().__init__()
     def run(self):
         while 1:
             self.signal.emit()
-            time.sleep(1)
+            time.sleep(1/update_frequency)
             
 class MainWindow1(QMainWindow):
     global settings
@@ -250,7 +256,21 @@ class MainWindow(QMainWindow):
         else:
             debug_manager = gs.debug_manager()
             
-
+        #A list of all the timestamps recieved from the CanSat for the X axis of graphs 
+        #(not related to starttime. Startime is local time, while timeline is as reported by cansat)
+        self.timeline = np.array([])
+        
+        self.packet_plot_x = []
+        self.packet_plot_in = []
+        self.packet_plot_out = []
+        
+        if keep_data:
+            with open('./assets/packet_data.json', 'r') as f:
+                d = json.load(f)
+                self.packet_plot_in = d['in']
+                self.packet_plot_out = d["out"]
+                self.packet_plot_x = d['x']
+            
             
         if len(debug_manager.debug_dict) != 0:
             dialog = DeleteDialog()
@@ -264,7 +284,7 @@ class MainWindow(QMainWindow):
         self.dataType = "height"
         
         #self.ui.debugPlot.curve.pen = self.pens[1]
-        #self.ui.debugPlot.setLabel("left", "packets")
+        self.ui.debugPlot.setLabel("left", "packets")
         
         self.valid_gps_index = 2
         for i in range(1, len(debug_manager.debug_data)):
@@ -276,9 +296,9 @@ class MainWindow(QMainWindow):
         
         self.sliderManager = SliderManager(self.ui.timeSlider)
         
-        #A list of all the timestamps recieved from the CanSat for the X axis of graphs 
-        #(not related to starttime. Startime is local time, while timeline is as reported by cansat)
-        self.timeline = np.array([])
+    
+        
+        
 
         #If data was not cleared, display it
         if len(debug_manager.debug_dict) != 0:
@@ -288,10 +308,17 @@ class MainWindow(QMainWindow):
         self.ui.timeSlider.timeUpdated.connect(self.updateGraphMarkers)
 
         
-        self.one_second_loop = one_second_loop()
-        self.one_second_loop.signal.connect(self.updateData)
-        self.one_second_loop.start()
+        self.updater = update_loop()
+        self.updater.signal.connect(self.updateData)
+        self.updater.start()
         
+    def store_data_on_exit(self):
+        with open('./assets/packet_data.json', 'w') as f:
+            d = {"in":self.packet_plot_in ,
+                 "out":self.packet_plot_out,
+                 "x":self.packet_plot_x}
+            json.dump(d, f)
+
     
     def getProgress(self):
         if mode == TRANSMIT:
@@ -384,11 +411,55 @@ class MainWindow(QMainWindow):
         self.sliderManager.updateTimerange()
 
 
-        if ground_station:
-            if ground_station.start_time != 0:
-                self.time_label.setText(f"{round(time.time()-ground_station.start_time, 1)} s")
+        if ground_station and ground_station.start_time != 0:
+            relative_time = time.time()-ground_station.start_time
+            
+            # Set the time elapsed value
+            self.time_label.setText(f"{round(relative_time, 1)} s")
+            
+            # Set the resend ratio
+            ratio = ground_station.packets_resent*100 // ground_station.packet_count
+            self.resend_label.setText(f'{ratio} %')
+            
+            #Set the progress bar
+            progress = self.getProgress()
+            self.progressBar.setValue(progress)
+            
+            update_packet_plot = False
+            
+            in_data = ground_station.packets_received
+            out_data = ground_station.packets_sent
+            
+            if len(self.packet_plot_x) != 0:
+                in_data -= self.packet_plot_in[-1]
+                out_data -= self.packet_plot_out[-1]
+            
+            
+            # If the plot is empty or data has changed or
+            # If the plot has only 1 point or the last 2 points are not the same 
+            # Then add a point of the same value at a current timestamp 
+            if  len(self.packet_plot_x) == 0 or\
+                self.packet_plot_in[-1] != in_data or self.packet_plot_out[-1] != out_data or \
+                len(self.packet_plot_x) == 1 or self.packet_plot_in[-2] != self.packet_plot_in[-1] or self.packet_plot_out[-2] != self.packet_plot_out[-1]:
                 
-            self.progressBar.setValue(self.getProgress())
+                
+                #Add the data
+                self.packet_plot_in.append(in_data)
+                self.packet_plot_out.append(out_data)
+                self.packet_plot_x.append(round(relative_time, 2))
+            # The data has not chnaged, so move the latest data point to the current timestamp
+            else:
+                self.packet_plot_x[-1] = round(relative_time, 2)
+                
+            self.debugPlot.curve1.setData(x = np.array(self.packet_plot_x), y = np.array(self.packet_plot_out))
+            self.debugPlot.curve.setData(x = np.array(self.packet_plot_x), y = np.array(self.packet_plot_in))
+                
+                    
+                    
+                    
+                    
+                
+                
         
         #Update the gps plot
         self.timeline = debug_manager.extraxtData("timestamp")[:]/1000
@@ -460,6 +531,7 @@ class DeleteDialog(QDialog):
     def delete(self):
         
         global debug_manager
+        
         debug_manager.debug_dict = []
         debug_manager.debug_data = gs.SortedList(debug_manager.debug_dict, key=lambda x: -x['timestamp'])
         self.accept()

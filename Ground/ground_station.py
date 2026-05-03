@@ -74,32 +74,42 @@ class receiver():
             "MAX_WINDOW": None
         }
         
-        self.start_time = 0
         
+        
+        #Classes
         self.radio = radio_serial(name=serial_name, radio_settings=radio_config)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
+        self.debug_manager = debug_manager()
         
         #Set the output path
         self.output_path = output_path
         if self.output_path[-1] != '/': self.output_path += '/'
-                
-        self.debug_manager = debug_manager()
         
+        #TRACKERS
         #Tracks how many data packets have been detected including corupt one, helps with recovery when the final packet is corrupt
         self.detected_packets = 0
-        
         self.packet_count = -1
-        
         self.expected_packet_count = -1
+        self.start_time = 0
+        self.packets_resent = 0
+        self.temp_resent_count = 0
+        self.first_packet = True
+        
+        self.packets_received = 0
+        self.packets_sent = 0
+        
+        # Hold the index of the last packet that needs to be received,
+        # This updates with the resend of corrupt packets
+        self.last_packet = None
         
         # Meant for testing resend by faking packet loss, to disable set to true, ik its cxonfusing
         self.resend = True
         self.packets_to_lose = list(range(4, 14))
         self.packets_to_lose.append(165)
         
-        self.packets_resent = 0
         
+        #Setup packet reader
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
                                                       header_id=C.CAN_HEADER_ID)
 
@@ -109,7 +119,7 @@ class receiver():
                                             {'id': C.DATA_PACKET_ID, 'structure': C.DATA_PACKET_STRUCTURE},\
                                             { 'id': C.CONNECT_PACKET_ID, 'structure': C.CONNECT_TRANS_STRUCTURE})
 
-        self.first_packet = True
+        
         
         self.header_length = self.unpack.get_length(C.HEADER_STRUCTURE, key=lambda x: x[1])
         
@@ -117,9 +127,7 @@ class receiver():
         self.resend_format = C.DATA_PACKET_STRUCTURE[0][1]
         self.max_resend_count = (C.MAX_PACKET_SIZE-self.header_length - C.CHECKSUM_SIZE) // self.unpack.item_length[self.resend_format]
         
-        # Hold the index of the last packet that needs to be received,
-        # This updates with the resend of corrupt packets
-        self.last_packet = None
+        
         
         #A list that holds all the payloads in order
         self.payloads = []
@@ -130,7 +138,7 @@ class receiver():
         self.resend_timeout = 1.5 #seconds
         
         
-        
+        # Create the connect ack packet
         connect_header = \
                {"header_id" : C.GROUND_HEADER_ID,
                 'id': C.CONNECT_PACKET_ID, 
@@ -138,6 +146,8 @@ class receiver():
         self.connect_resp_packet, _ = self.pack_sturct(connect_header, C.HEADER_STRUCTURE)
         self.connect_resp_packet += calculate_checksum(self.connect_resp_packet)
         
+        
+        # Create and start the receiver thread
         kwargs = {
             'packet_function': self.packet_handler,
             'corrupt_packet_function': self.corrupt_packet_handler,
@@ -145,18 +155,17 @@ class receiver():
             'timeout_function': self.request_resend
         }
 
-        # Create and start the thread
         self.receiver_thread = threading.Thread(target=self.radio.read_packets, kwargs=kwargs)
         self.receiver_thread.daemon = True  # Set as daemon so it closes when the app closes
         self.receiver_thread.start()
 
         
-    
+    # Does not do anything, it's here purely for parity between receiver and transmitter gorund station
     def start(self):
         pass
         
         
-        
+    # Requests a resend of the missing packets
     def request_resend(self):
         
         self.resend = True
@@ -165,6 +174,8 @@ class receiver():
         length = self.header_length + C.CHECKSUM_SIZE
         
         count = min(len(self.received_packet_tracker), self.max_resend_count)
+        
+        self.temp_resent_count = count
         
         resned_list = list(self.received_packet_tracker)[:count]
         
@@ -196,9 +207,10 @@ class receiver():
         self.resend_packet = packed_header + payload
         self.resend_packet += calculate_checksum(self.resend_packet) 
         
+        self.packets_sent += 1
         self.radio.transmit_packet(self.resend_packet)
                
-    
+    # Packts a a dictionary acoring to a structure into a bytearray ready for transmission
     def pack_sturct(self, values:dict, structure:tuple):
         out = bytearray(0)
         snipet_length = 0
@@ -224,7 +236,7 @@ class receiver():
         return (out, snipet_length)
     
         
-    
+    # Helps track if the stream has finished
     def corrupt_packet_handler(self, packet:dict):
         if packet['header']['id'] == C.DATA_PACKET_ID:
             self.detected_packets += 1
@@ -235,14 +247,18 @@ class receiver():
                 self.request_resend()
             
         
-        
+    # Handles packets
     def packet_handler(self, packet:dict):
-        
+        self.packets_received += 1
         match packet['header']['id']:
             case C.DATA_PACKET_ID:
                 
                 packet_i = packet['payload']['packet_i']
                 
+                # Incriment the resent packets count
+                if self.temp_resent_count != 0:
+                    self.packets_resent += self.temp_resent_count
+                    self.temp_resent_count = 0
                 
                 
                 #Simulate packet loss
@@ -307,6 +323,7 @@ class receiver():
                     self.start_time = time()
                 
                 # Send ack
+                self.packets_sent += 1
                 self.radio.transmit_packet(self.connect_resp_packet)
                 
                 self.start_time = time()
@@ -343,11 +360,12 @@ class transmitter():
         self.radio = radio_serial(name=serial_name, radio_settings= radio_config)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
-        
         self.debug_manager = debug_manager()
         
         # Transmission variables        
         self.connect_delay = 0.1
+        self.dir = data_dir
+        
         
         # Configure radio for receiving
         self.radio.header_structure_config(structure= C.HEADER_STRUCTURE,
@@ -355,35 +373,40 @@ class transmitter():
         
         
         #self.CTS_structure = (("CTS", 'uint8'))
-        self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure':C.DEBUG_PACKET_STRUCTURE},
+        self.radio.payload_structure_config({'id': C.DEBUG_PACKET_ID, 'structure': C.DEBUG_PACKET_STRUCTURE},
                                             {'id': C.RESEND_PACKET_ID, 'structure': C.RESEND_PACKET_STRUCTURE},
-                                            {'id':C.CONNECT_PACKET_ID, 'structure': C.CONNECT_REC_STRUCTURE})
+                                            {'id': C.CONNECT_PACKET_ID, 'structure': C.CONNECT_REC_STRUCTURE})
         
-        self.dir = data_dir
+        #Trackers
+        self.got_ack = False
+        self.start_time = 0
+        self.packets_resent = 0
+        self.file_size = 0
+        
+        self.packets_received = 0
+        self.packets_sent = 0
+        
+        # Stores
         self.payloads = []
-        
         self.queue = Queue()
         
         self.build_transmission_queue()
         
-        self.got_ack = False
+        self.packet_count = len(self.payloads)
         
-        self.start_time = 0
-        
-        self.packets_resent = 0
-        self.file_size = 0
-        
+        #Create the transmission and receiver thread, and start the receiver
         self.transmission_thread = threading.Thread(target=self.transmit_data)
         self.receiver_thread = threading.Thread(target=self.radio.read_packets, args=[self.packet_handler])
         self.receiver_thread.start()
         
-        
+    # Begin transmission
     def start(self):
         self.transmission_thread.start()
         
-        
+    # Handle packets
     def packet_handler(self, packet:dict):
         
+        self.packets_received += 1
         match packet['header']['id']:
             case C.DEBUG_PACKET_ID:
                 self.debug_manager.store_debug_packet(packet['payload'])
@@ -395,6 +418,8 @@ class transmitter():
                 format = C.DATA_PACKET_STRUCTURE[0][1] 
                 
                 packet_count = len(packet['payload']['payload'])// self.unpack.item_length[format]  
+                self.packets_resent += packet_count
+                
                 start = 0
                 
                 print(format, packet_count)
@@ -452,6 +477,7 @@ class transmitter():
         
         logging.debug("Checking link...")
         while not self.got_ack:
+            self.packets_sent += 1
             self.radio.transmit_packet(connect_packet)
             sleep(self.connect_delay)
         
@@ -485,6 +511,7 @@ class transmitter():
                 t = time()
             transmit_time_tracker = t
             
+            self.packets_sent += 1
             self.radio.transmit_packet(packet)
             
             print("TIME:", time()-t)
