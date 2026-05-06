@@ -1,5 +1,5 @@
-side_length = 10
-h = 15
+side_length = 21.3
+h = 20
 wire_distance = 6
 
 tie_off_length = 1.5

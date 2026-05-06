@@ -92,6 +92,7 @@ class receiver():
         self.packet_count = -1
         self.expected_packet_count = -1
         self.start_time = 0
+        self.stop_time = 0
         self.packets_resent = 0
         self.temp_resent_count = 0
         self.first_packet = True
@@ -163,6 +164,8 @@ class receiver():
     # Does not do anything, it's here purely for parity between receiver and transmitter gorund station
     def start(self):
         pass
+    def stop(self):
+        self.radio.stop_reading_packets()
         
         
     # Requests a resend of the missing packets
@@ -292,8 +295,9 @@ class receiver():
                         
                         logging.debug("exiting")
                         print('time:', time()-self.start_time)
-                        self.radio.stop_reading_packets()
-                        exit()
+                        #self.radio.stop_reading_packets()
+                        self.stop_time = time()
+                        
                 
                 
             case C.DEBUG_PACKET_ID:
@@ -380,6 +384,7 @@ class transmitter():
         #Trackers
         self.got_ack = False
         self.start_time = 0
+        self.stop_time = 0
         self.packets_resent = 0
         self.file_size = 0
         
@@ -402,6 +407,9 @@ class transmitter():
     # Begin transmission
     def start(self):
         self.transmission_thread.start()
+        
+    def stop(self):
+        self.radio.stop_reading_packets()
         
     # Handle packets
     def packet_handler(self, packet:dict):
@@ -527,7 +535,9 @@ class transmitter():
                 while wait >= time() and self.queue.empty():
                     #print(wait >= time(), wait, time())
                     sleep(0.05)
+        self.stop_time = time() - 10
         print(time()-10-self.start_time)
+        
         self.radio.stop_reading_packets()
             
     def build_transmission_queue(self):
