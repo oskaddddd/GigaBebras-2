@@ -11,8 +11,6 @@ from sortedcontainers import SortedList
 
 from Checksum import calculate_checksum
 
-from gradient import gradient
-
 import json
 
 import numpy as np
