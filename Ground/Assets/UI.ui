@@ -94,7 +94,7 @@
            <item>
             <widget class="QLabel" name="time_label">
              <property name="text">
-              <string>3.41 s</string>
+              <string>0.00s</string>
              </property>
             </widget>
            </item>
@@ -121,7 +121,7 @@
            <item>
             <widget class="QLabel" name="resend_label">
              <property name="text">
-              <string>3.62 %</string>
+              <string>0.0 %</string>
              </property>
             </widget>
            </item>

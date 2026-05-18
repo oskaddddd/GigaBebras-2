@@ -612,8 +612,12 @@ class StartupDialog(QDialog):
         self.path_input.setText('/select transmitter or receiver')
         
         serial_names = []
+        self.serial_lookup = {}
         for port in list_ports.comports():
-            if port.description != "n/a": serial_names.append(port.name)
+            if port.description != "n/a":
+                print(f"device: {port.device}, typev: {type(port.device)}")
+                serial_names.append(port.name)
+                self.serial_lookup[port.name] = port.device
         serial_names.append("None")
         self.serial_box.addItems(serial_names)
         
@@ -621,7 +625,11 @@ class StartupDialog(QDialog):
     def finish(self):
         global serial_port
         serial_port = str(self.serial_box.currentText())
-        if serial_port == "None": serial_port = None
+        if serial_port == "None": 
+            serial_port = None
+        else:
+            serial_port = self.serial_lookup[serial_port]
+            
         if mode != None:
             with open('Ground/Assets/settings.json', 'w') as f:
                 json.dump(settings, f)

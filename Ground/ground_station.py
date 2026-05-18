@@ -51,7 +51,7 @@ class debug_manager():
         
 
 class receiver():
-    def __init__(self, output_path = "./output/", serial_name = None):
+    def __init__(self, output_path = "./output/", serial_device = None):
         
         radio_config = {
             "FORMAT": None,
@@ -75,7 +75,7 @@ class receiver():
         
         
         #Classes
-        self.radio = radio_serial(name=serial_name, radio_settings=radio_config)  
+        self.radio = radio_serial(device=serial_device, radio_settings=radio_config)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
         self.debug_manager = debug_manager()
@@ -339,7 +339,7 @@ class receiver():
 
  
 class transmitter():
-    def __init__(self, data_dir, serial_name):
+    def __init__(self, data_dir, serial_device):
         
         radio_config = {
             "FORMAT": None,
@@ -361,7 +361,7 @@ class transmitter():
         }
         
         #Setup radio
-        self.radio = radio_serial(name=serial_name, radio_settings= radio_config)  
+        self.radio = radio_serial(device=serial_device, radio_settings= radio_config)  
         self.serial = self.radio.serial 
         self.unpack = self.radio.parser
         self.debug_manager = debug_manager()

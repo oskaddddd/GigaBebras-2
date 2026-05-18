@@ -1,277 +1,376 @@
 [
     {
-        "timestamp": 20496,
+        "timestamp": 30624,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.695
+        "temprature": 21.51,
+        "pressure": 10000.827
     },
     {
-        "timestamp": 22512,
+        "timestamp": 31641,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.695
+        "temprature": 21.52,
+        "pressure": 10000.712
     },
     {
-        "timestamp": 24522,
+        "timestamp": 32661,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.695
+        "temprature": 21.52,
+        "pressure": 10000.712
     },
     {
-        "timestamp": 26529,
+        "timestamp": 33681,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.52,
+        "pressure": 10000.441
     },
     {
-        "timestamp": 28536,
+        "timestamp": 34689,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.53,
+        "pressure": 10000.517
     },
     {
-        "timestamp": 30543,
+        "timestamp": 35696,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.53,
+        "pressure": 10000.594000000001
     },
     {
-        "timestamp": 32550,
+        "timestamp": 36703,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.54,
+        "pressure": 10000.477
     },
     {
-        "timestamp": 34557,
+        "timestamp": 37710,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.55,
+        "pressure": 10000.553
     },
     {
-        "timestamp": 36564,
+        "timestamp": 38717,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.56,
+        "pressure": 10000.435
     },
     {
-        "timestamp": 38571,
+        "timestamp": 39724,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.56,
+        "pressure": 10000.512
     },
     {
-        "timestamp": 40578,
+        "timestamp": 40731,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.57,
+        "pressure": 10000.589
     },
     {
-        "timestamp": 42585,
+        "timestamp": 41738,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.580000000000002,
+        "pressure": 10000.471
     },
     {
-        "timestamp": 44592,
+        "timestamp": 42745,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.423
+        "temprature": 21.59,
+        "pressure": 10000.627
     },
     {
-        "timestamp": 46599,
+        "timestamp": 43752,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.502
+        "temprature": 21.6,
+        "pressure": 10000.43
     },
     {
-        "timestamp": 48606,
+        "timestamp": 44759,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.502
+        "temprature": 21.61,
+        "pressure": 10000.584
     },
     {
-        "timestamp": 50613,
+        "timestamp": 45766,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.502
+        "temprature": 21.61,
+        "pressure": 10000.392
     },
     {
-        "timestamp": 52620,
+        "timestamp": 46773,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.502
+        "temprature": 21.62,
+        "pressure": 10000.545
     },
     {
-        "timestamp": 54627,
+        "timestamp": 47780,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.502
+        "temprature": 21.63,
+        "pressure": 10000.623
     },
     {
-        "timestamp": 56634,
+        "timestamp": 48787,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.35,
-        "pressure": 9881.502
+        "temprature": 21.64,
+        "pressure": 10000.502
     },
     {
-        "timestamp": 58641,
+        "timestamp": 49794,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.36,
-        "pressure": 9881.577
+        "temprature": 21.64,
+        "pressure": 10000.581
     },
     {
-        "timestamp": 60648,
+        "timestamp": 50801,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.36,
-        "pressure": 9881.577
+        "temprature": 21.650000000000002,
+        "pressure": 10000.464
     },
     {
-        "timestamp": 62655,
+        "timestamp": 51808,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.36,
-        "pressure": 9881.577
+        "temprature": 21.66,
+        "pressure": 10000.541000000001
     },
     {
-        "timestamp": 64662,
+        "timestamp": 52815,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.36,
-        "pressure": 9881.305
+        "temprature": 21.67,
+        "pressure": 10000.425000000001
     },
     {
-        "timestamp": 66669,
+        "timestamp": 53822,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.36,
-        "pressure": 9881.381
+        "temprature": 21.67,
+        "pressure": 10000.503
     },
     {
-        "timestamp": 68676,
+        "timestamp": 54829,
         "gps": [
             0,
             0
         ],
         "height": 0,
         "velocity": 0,
-        "temprature": 22.36,
-        "pressure": 9881.381
+        "temprature": 21.68,
+        "pressure": 10000.381
+    },
+    {
+        "timestamp": 55836,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.69,
+        "pressure": 10000.459
+    },
+    {
+        "timestamp": 56843,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.7,
+        "pressure": 10000.344000000001
+    },
+    {
+        "timestamp": 57850,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.7,
+        "pressure": 10000.42
+    },
+    {
+        "timestamp": 58857,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.71,
+        "pressure": 10000.571
+    },
+    {
+        "timestamp": 59864,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.72,
+        "pressure": 10000.377
+    },
+    {
+        "timestamp": 60871,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.72,
+        "pressure": 10000.453
+    },
+    {
+        "timestamp": 61878,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.73,
+        "pressure": 10000.609
+    },
+    {
+        "timestamp": 62885,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.740000000000002,
+        "pressure": 10000.416000000001
+    },
+    {
+        "timestamp": 63892,
+        "gps": [
+            0,
+            0
+        ],
+        "height": 0,
+        "velocity": 0,
+        "temprature": 21.75,
+        "pressure": 10000.569
     }
 ]

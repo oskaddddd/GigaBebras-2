@@ -82,7 +82,7 @@ class Parser():
 
 
 class radio_serial():
-    def __init__(self, name:str = None, radio_settings = None, baud = 57600, set_parameters = C.UPDATE_RADIO_SETTINGS):
+    def __init__(self, device:str = None, radio_settings = None, baud = 57600, set_parameters = C.UPDATE_RADIO_SETTINGS):
         '''This function is responsible for handling the serial communication with the radio, radio settings and eceiving the packets from the radio. It is not respnsible for sending packets.'''
         
         self.radio_config = radio_settings
@@ -94,7 +94,7 @@ class radio_serial():
         self.timeout_function = None
         self.count = None
         
-        self.serial_setup(name, baud)
+        self.serial_setup(device, baud)
         if set_parameters: self.config_radio()
 
         self.parser = Parser()
@@ -103,13 +103,13 @@ class radio_serial():
         
         
         
-    def serial_names(self):
-        return list(map(lambda x: x.name, list_ports.comports()))
+    def serial_devices(self):
+        return list(map(lambda x: x.device, list_ports.comports()))
         
         
     # Establish serial communication with the radio
-    def serial_setup(self, name, baud) -> Serial:
-        if not name:
+    def serial_setup(self, device, baud) -> Serial:
+        if not device:
             #Find available ports and promt user to choose
             ports = list_ports.comports()
             
@@ -118,17 +118,17 @@ class radio_serial():
                 if port.description!="n/a":
                     print(f"({port.description})")
                     print(f"[{i}] {port.name} {port.description}")
-            name = ports[int(input('\nENTER SELECTION:'))].name
-            self.serial = Serial(f"/dev/{name}", baud, rtscts=True)
+            device = ports[int(input('\nENTER SELECTION:'))].name
+            self.serial = Serial(f"/dev/{device}", baud, rtscts=True)
         else:
-            names = self.serial_names()
+            devices = self.serial_devices()
             i = 1
-            while name not in names:
-                logging.warning(f'Serial [{name}] unavailable. Attempt #{i}, retrying...')
+            while device not in devices:
+                logging.warning(f'Serial [{device}] unavailable. Attempt #{i}, retrying...')
                 i+=1
                 sleep(1)
-                names = self.serial_names()
-            self.serial = Serial(f"/dev/{name}", baud)
+                devices = self.serial_devices()
+            self.serial = Serial(device, baud)
 
         logging.debug("Serial initialised!")
 
