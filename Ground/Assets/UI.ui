@@ -56,7 +56,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QPushButton" name="pushButton">
+            <widget class="QPushButton" name="stop_button">
              <property name="enabled">
               <bool>false</bool>
              </property>
@@ -94,7 +94,7 @@
            <item>
             <widget class="QLabel" name="time_label">
              <property name="text">
-              <string>0.00 s</string>
+              <string>3.41 s</string>
              </property>
             </widget>
            </item>
@@ -121,7 +121,7 @@
            <item>
             <widget class="QLabel" name="resend_label">
              <property name="text">
-              <string>0.00 %</string>
+              <string>3.62 %</string>
              </property>
             </widget>
            </item>
@@ -184,7 +184,7 @@
     <item row="4" column="0">
      <widget class="QProgressBar" name="progressBar">
       <property name="value">
-       <number>0</number>
+       <number>100</number>
       </property>
      </widget>
     </item>
@@ -245,7 +245,7 @@
   <connection>
    <sender>start_button</sender>
    <signal>toggled(bool)</signal>
-   <receiver>pushButton</receiver>
+   <receiver>stop_button</receiver>
    <slot>setEnabled(bool)</slot>
    <hints>
     <hint type="sourcelabel">
@@ -259,9 +259,9 @@
    </hints>
   </connection>
   <connection>
-   <sender>pushButton</sender>
+   <sender>stop_button</sender>
    <signal>toggled(bool)</signal>
-   <receiver>pushButton</receiver>
+   <receiver>stop_button</receiver>
    <slot>setDisabled(bool)</slot>
    <hints>
     <hint type="sourcelabel">

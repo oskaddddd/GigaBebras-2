@@ -96,6 +96,7 @@ class receiver():
         self.packets_resent = 0
         self.temp_resent_count = 0
         self.first_packet = True
+        self.reading_packets = True
         
         self.packets_received = 0
         self.packets_sent = 0
@@ -165,6 +166,7 @@ class receiver():
     def start(self):
         pass
     def stop(self):
+        self.reading_packets = False
         self.radio.stop_reading_packets()
         
         
@@ -390,6 +392,7 @@ class transmitter():
         
         self.packets_received = 0
         self.packets_sent = 0
+        self.reading_packets = True
         
         # Stores
         self.payloads = []
@@ -409,6 +412,7 @@ class transmitter():
         self.transmission_thread.start()
         
     def stop(self):
+        self.reading_packets = False
         self.radio.stop_reading_packets()
         
     # Handle packets
@@ -484,7 +488,7 @@ class transmitter():
         connect_packet += calculate_checksum(connect_packet)
         
         logging.debug("Checking link...")
-        while not self.got_ack:
+        while not self.got_ack and self.reading_packets:
             self.packets_sent += 1
             self.radio.transmit_packet(connect_packet)
             sleep(self.connect_delay)
@@ -496,7 +500,7 @@ class transmitter():
         transmit_time_tracker = time()
         
         
-        while not self.queue.empty():
+        while not self.queue.empty() and self.reading_packets:
 
             
             packed_payload = self.payloads[self.queue.get()]

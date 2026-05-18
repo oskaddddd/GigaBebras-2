@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "FS.h"
+//#include "FS.h"
 #include <Wire.h>
 
 
@@ -43,7 +43,7 @@ uint8_t length_byte_offset = 3;
 #define SERIAL_RX_SIZE 1024 //Serial fifo rx buffer size 
 #define RESEND_TIMEOUT 1500 //millisecods
 
-#define DEBUG_DELAY 2000 // miliseconds
+#define DEBUG_DELAY 1000 // miliseconds
 #define CONNECT_DELAY 500 //miliseconds
 
 //PINS

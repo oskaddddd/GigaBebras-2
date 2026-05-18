@@ -386,6 +386,8 @@ class radio_serial():
         reading_thread.join()
         parsing_thread.join()
         
+        logging.debug("FInished reading packets")
+        
         return
         
         

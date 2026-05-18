@@ -193,17 +193,28 @@ class gpsWidget(gl.GLViewWidget):
         grid.setSpacing(1, 1)
         self.addItem(grid)
         
-        self.wind = gl.GLLinePlotItem(color = (0, 0, 255, 255), mode = "lines")
+        self.wind = gl.GLLinePlotItem(color = (255, 0, 0, 255), mode = "lines")
         self.addItem(self.wind)
         
-        self.plot = gl.GLLinePlotItem(antialias = True, color = (255, 255, 255, 255), mode = 'line_strip')
+        self.plot = gl.GLLinePlotItem(antialias = True, color = (0, 255, 255, 255), mode = 'line_strip')
         self.markerDot = gl.GLScatterPlotItem(pos = np.array([[0, 0, 0]]), size = 10, color = (255, 0, 0, 255))
         #self.markerDot.setData(pos = [[0, 0, 0]], size = 1, color = 'r')
-
+        self.plot.setGLOptions('translucent')
+        self.markerDot.setGLOptions('translucent')
+        self.wind.setGLOptions('translucent')
+        
+        self.plot.setDepthValue(0)
+        self.wind.setDepthValue(99)
+        self.markerDot.setDepthValue(100)
+        
+        self.addItem(self.plot)
         self.addItem(self.markerDot)
         
+        #self.wind.setDepthValue(1)
+        
+        
 
-        self.addItem(self.plot)
+        
     def paintGL(self):
         self.makeCurrent()
         super().paintGL()
@@ -239,6 +250,7 @@ class MainWindow(QMainWindow):
         self.startTime = round(time.time())
         #Resned ratio
         self.ratio = 0
+        self.time_elapsed = 0
 
         # Setup the ground station as transmitter or receiver
         if serial_port != None:
@@ -247,6 +259,7 @@ class MainWindow(QMainWindow):
             else: # Setup the receiver
                 ground_station = gs.receiver(settings['rec_path'], serial_port)
                 self.start_button.setEnabled(False)
+                self.stop_button.setEnabled(True)
             
             debug_manager = ground_station.debug_manager
 
@@ -256,6 +269,9 @@ class MainWindow(QMainWindow):
             
         # If no serial port was chosen create a debug manager for some reason
         else:
+            if mode == RECEIVE:
+                self.start_button.setEnabled(False)
+                self.stop_button.setEnabled(True)
             debug_manager = gs.debug_manager()
             
         # Ask wheter to keep or delete data
@@ -288,6 +304,11 @@ class MainWindow(QMainWindow):
                 self.packet_plot_in = d['in']
                 self.packet_plot_out = d["out"]
                 self.packet_plot_x = d['x']
+                
+                self.time_elapsed = d['time']
+                self.time_label.setText(f"{round(d['time'], 2)} s")
+                self.ratio = d['resend']
+                self.resend_label.setText(f'{d["resend"]} %')
             
             #Loads the data onto the plot
             self.debugPlot.curve1.setData(x = np.array(self.packet_plot_x), y = np.array(self.packet_plot_out))
@@ -299,7 +320,7 @@ class MainWindow(QMainWindow):
         self.dataType = "height"
         
         #
-        self.ui.debugPlot.setLabel("left", "packets")
+        self.ui.debugPlot.setLabel("left", "packets per second")
         
         # Ask me a year ago why this is set to 2, im to scare to touch it ngl
         self.valid_gps_index = 2
@@ -336,7 +357,7 @@ class MainWindow(QMainWindow):
             d = {"in":self.packet_plot_in ,
                  "out":self.packet_plot_out,
                  "x":self.packet_plot_x,
-                 "time": 0,
+                 "time": self.time_elapsed,
                  "resend": self.ratio}
             json.dump(d, f, indent=4)
 
@@ -416,7 +437,7 @@ class MainWindow(QMainWindow):
             self.ui.locationPlot.plot.setData(pos = result, width = 4.0)
             
         #Calculate wind 
-        arrowLength = 10
+        arrowLength =100
         deltaTimes = self.timeline[self.valid_gps_index:]+self.timeline[self.valid_gps_index-1:-1]
         
         gpsDifference = gps[0:-self.valid_gps_index] - gps[1:-self.valid_gps_index+1]
@@ -427,13 +448,14 @@ class MainWindow(QMainWindow):
         wind_data[1::2] = result[1:]
         wind_data[1::2, :2] += gpsDifference
         
-        print(gpsDifference)
+        #print(gpsDifference)
         
         self.ui.locationPlot.wind.setData(pos = wind_data)
         #self.updateGraphMarkers(self.sliderManager.index)
             
+    # Updates the IO plot data
     def update_packet_data(self):
-        if ground_station:
+        if ground_station and ground_station.reading_packets:
             packet_time = time.time()
             if ground_station.start_time != 0:
             
@@ -442,10 +464,12 @@ class MainWindow(QMainWindow):
 
                 # Set the time elapsed value
                 if ground_station.stop_time != 0:
-                    self.time_label.setText(f"{round(ground_station.stop_time - ground_station.start_time, 2)} s")
+                    self.time_elapsed = ground_station.stop_time - ground_station.start_time
+                    
                 else:
-                    self.time_label.setText(f"{round(relative_time, 2)} s")
-
+                    self.time_elapsed = relative_time
+                    
+                self.time_label.setText(f"{round(self.time_elapsed, 2)} s")
                 # Set the resend ratio
                 self.ratio = ground_station.packets_resent*100 // ground_station.packet_count
                 self.resend_label.setText(f'{self.ratio} %')
